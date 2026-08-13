@@ -104,6 +104,16 @@ export function DnsManager({ domainName }: { domainName: string }) {
     };
   }, [domainName]);
 
+  useEffect(() => {
+    if (!records) return;
+    const hasPending = records.some((r) => r.syncStatus !== "synced");
+    if (!hasPending) return;
+    const id = setInterval(() => {
+      void load();
+    }, 2000);
+    return () => clearInterval(id);
+  }, [records, load]);
+
   async function addRecord(e: React.FormEvent) {
     e.preventDefault();
     setMutating(true);

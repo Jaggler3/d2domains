@@ -12,7 +12,7 @@ export interface RegistrySearchResult {
 }
 
 export interface RegistryDnsRecord {
-  id: string;
+  id: string | number;
   type: string;
   host: string;
   fqdn: string;
@@ -132,9 +132,10 @@ export function createRegistryClient(config: RegistryConfig) {
     }
 
     if (!res.ok) {
+      const bodyText = await res.text().catch(() => "");
       const retryable = res.status === 408 || res.status === 429 || res.status >= 500;
       throw new RegistryError(
-        `registry responded ${res.status}`,
+        `registry responded ${res.status}${bodyText ? `: ${bodyText.slice(0, 200)}` : ""}`,
         res.status,
         retryable,
         res.status === 429 ? parseRetryAfter(res.headers.get("retry-after")) : null,

@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "../db/client";
 import { records, zones, type Record, type Zone } from "../db/schema";
-import { createRegistryClient } from "../adapters/registry";
+import { createRegistryClient, type RegistryDnsRecord } from "../adapters/registry";
 import { enqueueDnsSync } from "./dns-sync";
 import { HttpError } from "../lib/http";
 import { loadEnv } from "../config/env";
@@ -39,7 +39,7 @@ async function getOrCreateZone(userId: string, domainName: string): Promise<Zone
 
 async function ensurePulled(zone: Zone): Promise<void> {
   if (zone.pulled) return;
-  let remote: { records: { id: string; type: string; host: string; answer: string; ttl: number; priority: number | null }[] } = { records: [] };
+  let remote: { records: RegistryDnsRecord[] } = { records: [] };
   try {
     remote = await registry.listDnsRecords(zone.domainName);
   } catch (err) {
@@ -49,11 +49,11 @@ async function ensurePulled(zone: Zone): Promise<void> {
     await db.insert(records).values({
       zoneId: zone.id,
       type: r.type,
-      name: r.host,
+      name: r.host ?? "@",
       value: r.answer,
       ttl: r.ttl,
       priority: r.priority,
-      registryRecordId: r.id,
+      registryRecordId: String(r.id),
       syncStatus: "synced",
     });
   }

@@ -1,7 +1,7 @@
 import { HttpError } from "../lib/http";
 
 export interface RegistryDnsRecord {
-  id: string;
+  id: string | number;
   type: string;
   host: string;
   fqdn: string;
@@ -28,9 +28,10 @@ export function createRegistryClient(config: { baseUrl: string }) {
     if (res.status === 204) return undefined as T;
     const data = (await res.json().catch(() => null)) as { error?: string } | null;
     if (!res.ok) {
+      const status = res.status >= 500 ? 502 : res.status;
       throw new HttpError(
         data?.error ?? "registry error",
-        res.status === 429 ? 429 : 502,
+        status,
       );
     }
     return data as T;

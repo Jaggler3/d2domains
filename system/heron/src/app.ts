@@ -25,7 +25,7 @@ export function createApp(redis: Redis) {
     }
     if (err instanceof RegistryError) {
       const status = err.status >= 400 && err.status < 600 ? err.status : 502;
-      return c.json({ error: "registry error" }, status as ContentfulStatusCode);
+      return c.json({ error: err.message }, status as ContentfulStatusCode);
     }
     console.error("[heron]", err);
     return c.json({ error: "internal server error" }, 500);

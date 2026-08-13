@@ -79,15 +79,16 @@ function recordShape(row: {
   ttl: number;
   priority: number | null;
 }) {
-  return {
+  // name.com omits `host` for root (@) records, keeping only fqdn
+  const base = {
     id: row.id,
     type: row.type,
-    host: row.host,
     fqdn: row.host === "@" ? row.domain_name : `${row.host}.${row.domain_name}`,
     answer: row.answer,
     ttl: row.ttl,
     priority: row.priority,
   };
+  return row.host === "@" ? base : { ...base, host: row.host };
 }
 
 const listRecords = db.prepare(

@@ -53,6 +53,35 @@ async function markError(recordId: string, message: string): Promise<void> {
     .where(eq(records.id, recordId));
 }
 
+async function adoptRecord(
+  record: typeof records.$inferSelect,
+  domain: string,
+  type: string,
+  host: string,
+): Promise<boolean> {
+  try {
+    const { records: remote } = await registry.listDnsRecords(domain);
+    const match = remote.find(
+      (r) => r.type === type && (r.host ?? "@") === host,
+    );
+    if (!match) return false;
+    await db
+      .update(records)
+      .set({
+        syncStatus: "synced",
+        syncError: null,
+        registryRecordId: String(match.id),
+        updatedAt: new Date(),
+      })
+      .where(eq(records.id, record.id));
+    console.log(`[otter] reconciled ${type} ${host} (${domain}) as ${match.id}`);
+    return true;
+  } catch (err) {
+    console.error(`[otter] reconcile failed for ${type} ${host} (${domain}):`, err);
+    return false;
+  }
+}
+
 async function processSyncJob(jobData: DnsSyncPayload): Promise<void> {
   const found = await getRecord(jobData.recordId);
   if (!found || !found.zone) {
@@ -91,23 +120,38 @@ async function processSyncJob(jobData: DnsSyncPayload): Promise<void> {
         .set({
           syncStatus: "synced",
           syncError: null,
-          registryRecordId: res.record.id,
+          registryRecordId: String(res.record.id),
           updatedAt: new Date(),
         })
         .where(eq(records.id, record.id));
       console.log(`[otter] synced ${record.type} ${record.name} (${domain})`);
     } else {
-      const res = await registry.createDnsRecord(domain, payload);
-      await db
-        .update(records)
-        .set({
-          syncStatus: "synced",
-          syncError: null,
-          registryRecordId: res.record.id,
-          updatedAt: new Date(),
-        })
-        .where(eq(records.id, record.id));
-      console.log(`[otter] created ${record.type} ${record.name} (${domain})`);
+      try {
+        const res = await registry.createDnsRecord(domain, payload);
+        await db
+          .update(records)
+          .set({
+            syncStatus: "synced",
+            syncError: null,
+            registryRecordId: String(res.record.id),
+            updatedAt: new Date(),
+          })
+          .where(eq(records.id, record.id));
+        console.log(`[otter] created ${record.type} ${record.name} (${domain})`);
+      } catch (err) {
+        // create may have succeeded at the registry before our response timed
+        // out; a 4xx here usually means the record already exists. Reconcile by
+        // adopting the existing registry record instead of failing.
+        if (
+          err instanceof HttpError &&
+          err.status < 500 &&
+          err.status !== 429 &&
+          (await adoptRecord(record, domain, record.type, record.name))
+        ) {
+          return;
+        }
+        throw err;
+      }
     }
   } catch (err) {
     if (err instanceof HttpError && err.status < 500 && err.status !== 429) {
