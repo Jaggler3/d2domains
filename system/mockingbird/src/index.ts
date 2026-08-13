@@ -266,7 +266,9 @@ const server = Bun.serve({
           const rows = listRecords.all(domain) as {
             id: string; domain_name: string; type: string; host: string; answer: string; ttl: number; priority: number | null;
           }[];
-          return Response.json({ records: rows.map(recordShape) });
+          const records = rows.map(recordShape);
+          // name.com returns bare {} when a domain has no records, not {records: []}
+          return Response.json(records.length === 0 ? {} : { records });
         }
 
         if (url.pathname === `/v4/domains/${domain}/records` && request.method === "POST") {

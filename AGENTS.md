@@ -99,6 +99,7 @@ Long-term product goals: sell/include **email services** and **hosting services*
 ## Gotchas / history
 
 - `docker compose up --watch` runs whatever is in the image; if the image predates newly-committed code, containers serve stale routes/endpoints (symptom: 404s that work when you test the service directly). Rebuild with `docker compose up --build --watch`. `--build` only matters on `up`, not while watching — source edits hot-reload via sync + `bun --watch`, and `package.json` changes trigger a rebuild action.
+- name.com returns `{}` (no `records` key) for a domain with no DNS records — not `{records: []}`. heron/otter handle it defensively; mockingbird mirrors the quirk so mock dev exercises the same path.
 - name.com dev token was dead initially → mockingbird was built as a drop-in. Test buys against mockingbird; real-dev-API buys attempt real sandbox registrations.
 - Redis search cache served stale availability across registry-source switches → cache key later included the source, then became source-agnostic again once heron was the single entry point; buy clears the cache.
 - `attempts`/`backoff` are BullMQ **job** options (queue.add), not Worker options (v6).
