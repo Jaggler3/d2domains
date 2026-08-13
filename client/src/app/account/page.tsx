@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Globe, Loader2 } from "lucide-react";
+import { ArrowRight, Globe, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -86,21 +86,24 @@ export default async function DashboardPage() {
           ))}
 
           {domains.map((d) => (
-            <li
-              key={d.id}
-              className="flex items-center justify-between gap-4 px-4 py-4"
-            >
-              <div className="flex min-w-0 items-center gap-3">
-                <span className="truncate font-mono text-sm">
-                  {d.domainName}
+            <li key={d.id}>
+              <Link
+                href={`/account/${d.domainName}`}
+                className="flex items-center justify-between gap-4 px-4 py-4 transition-colors hover:bg-muted/50"
+              >
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className="truncate font-mono text-sm">
+                    {d.domainName}
+                  </span>
+                  <Badge variant="outline" className="rounded-full text-[10px]">
+                    {d.status}
+                  </Badge>
+                </div>
+                <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+                  expires {new Date(d.expiresAt).getUTCFullYear()}
+                  <ArrowRight className="size-3.5" />
                 </span>
-                <Badge variant="outline" className="rounded-full text-[10px]">
-                  {d.status}
-                </Badge>
-              </div>
-              <span className="shrink-0 text-xs text-muted-foreground">
-                expires {new Date(d.expiresAt).getUTCFullYear()}
-              </span>
+              </Link>
             </li>
           ))}
         </ul>

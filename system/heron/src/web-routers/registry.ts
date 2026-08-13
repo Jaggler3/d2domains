@@ -10,5 +10,10 @@ export function createRegistryRouter(redis: Redis) {
   router.post("/check-availability", (c) => controller.checkAvailability(c));
   router.post("/register", (c) => controller.register(c));
 
+  router.get("/dns/:domainName/records", (c) => controller.listDnsRecords(c));
+  router.post("/dns/:domainName/records", (c) => controller.createDnsRecord(c));
+  router.put("/dns/:domainName/records/:recordId", (c) => controller.updateDnsRecord(c));
+  router.delete("/dns/:domainName/records/:recordId", (c) => controller.deleteDnsRecord(c));;
+
   return router;
 }

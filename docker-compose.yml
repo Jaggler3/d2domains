@@ -10,6 +10,7 @@ services:
       REGISTRY_URL: http://heron:8783
       WEASEL_URL: http://weasel:8781
       WOMBAT_URL: http://wombat:8782
+      OTTER_URL: http://otter:8784
       PORT: 8787
       CLIENT_ORIGIN: http://localhost:3000
     ports:
@@ -132,6 +133,35 @@ services:
             - data
         - action: rebuild
           path: ./system/badger/package.json
+
+  otter:
+    build:
+      context: ./system/otter
+    command: bun run --watch src/index.ts
+    env_file: ./.env
+    environment:
+      OTTER_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/d2otter
+      REDIS_URL: redis://redis:6379
+      REGISTRY_URL: http://heron:8783
+      OTTER_PORT: 8784
+    ports:
+      - "8784:8784"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    develop:
+      watch:
+        - action: sync
+          path: ./system/otter
+          target: /app
+          ignore:
+            - node_modules
+            - .env*
+            - data
+        - action: rebuild
+          path: ./system/otter/package.json
 
   beaver:
     build:

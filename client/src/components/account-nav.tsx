@@ -3,7 +3,6 @@
 import { usePathname } from "next/navigation";
 import {
   LayoutGrid,
-  Network,
   ArrowLeftRight,
   CreditCard,
   Settings,
@@ -14,7 +13,6 @@ import { Button } from "@/components/ui/button";
 
 const navItems = [
   { label: "dashboard", icon: LayoutGrid, href: "/account", ready: true },
-  { label: "dns", icon: Network, href: "/account", ready: false },
   { label: "transfers", icon: ArrowLeftRight, href: "/account", ready: false },
   { label: "billing", icon: CreditCard, href: "/account", ready: false },
   { label: "settings", icon: Settings, href: "/account", ready: false },

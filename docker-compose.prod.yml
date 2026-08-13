@@ -30,6 +30,10 @@ services:
     command: bun run src/index.ts
     restart: unless-stopped
 
+  otter:
+    command: bun run src/index.ts
+    restart: unless-stopped
+
   beaver:
     command: bun run src/index.ts
     restart: unless-stopped

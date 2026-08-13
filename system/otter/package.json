@@ -1,0 +1,28 @@
+{
+  "name": "otter",
+  "module": "src/index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun --env-file=../../.env --watch run src/index.ts",
+    "start": "bun run src/index.ts",
+    "db:generate": "bun --env-file=../../.env run drizzle-kit generate",
+    "db:migrate": "bun --env-file=../../.env run drizzle-kit migrate",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "bullmq": "^6.1.0",
+    "drizzle-orm": "^0.45.2",
+    "hono": "^4.13.1",
+    "ioredis": "^6.0.0",
+    "postgres": "^3.4.9",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "drizzle-kit": "^0.31.10"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}

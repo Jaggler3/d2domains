@@ -25,6 +25,15 @@ db.exec(`
     price REAL NOT NULL DEFAULT 0,
     reserved_at TEXT
   );
+  CREATE TABLE IF NOT EXISTS dns_records (
+    id TEXT PRIMARY KEY,
+    domain_name TEXT NOT NULL,
+    type TEXT NOT NULL,
+    host TEXT NOT NULL,
+    answer TEXT NOT NULL,
+    ttl INTEGER NOT NULL DEFAULT 3600,
+    priority INTEGER
+  );
 `);
 
 const SEED_TAKEN = [
@@ -54,6 +63,44 @@ const findDomain = db.prepare(
 function isTaken(domain: string): boolean {
   return findDomain.get(domain) !== null;
 }
+
+function recordShape(row: {
+  id: string;
+  domain_name: string;
+  type: string;
+  host: string;
+  answer: string;
+  ttl: number;
+  priority: number | null;
+}) {
+  return {
+    id: row.id,
+    type: row.type,
+    host: row.host,
+    fqdn: row.host === "@" ? row.domain_name : `${row.host}.${row.domain_name}`,
+    answer: row.answer,
+    ttl: row.ttl,
+    priority: row.priority,
+  };
+}
+
+const listRecords = db.prepare(
+  "SELECT * FROM dns_records WHERE domain_name = ? ORDER BY type, host",
+);
+const findRecord = db.prepare(
+  "SELECT * FROM dns_records WHERE id = ? AND domain_name = ?",
+);
+const insertRecord = db.prepare(
+  "INSERT INTO dns_records (id, domain_name, type, host, answer, ttl, priority) VALUES (?, ?, ?, ?, ?, ?, ?)",
+);
+const updateRecord = db.prepare(
+  "UPDATE dns_records SET type = ?, host = ?, answer = ?, ttl = ?, priority = ? WHERE id = ? AND domain_name = ?",
+);
+const deleteRecord = db.prepare(
+  "DELETE FROM dns_records WHERE id = ? AND domain_name = ?",
+);
+
+const DOMAIN_RECORDS_RE = /^\/v4\/domains\/([^/]+)\/records(?:\/([^/]+))?$/;
 
 function authorized(request: Request): boolean {
   const header = request.headers.get("authorization") ?? "";
@@ -90,7 +137,12 @@ const server = Bun.serve({
     if (url.pathname === "/healthz") {
       return Response.json({ status: "ok" });
     }
-    if (url.pathname !== "/v4/domains:search" && url.pathname !== "/v4/domains:checkAvailability" && url.pathname !== "/v4/domains") {
+    const isRegistryCall =
+      url.pathname === "/v4/domains:search" ||
+      url.pathname === "/v4/domains:checkAvailability" ||
+      url.pathname === "/v4/domains" ||
+      DOMAIN_RECORDS_RE.test(url.pathname);
+    if (!isRegistryCall) {
       return Response.json({ message: "Not Found" }, { status: 404 });
     }
     if (!authorized(request)) return unauthorized();
@@ -139,6 +191,15 @@ const server = Bun.serve({
         db.prepare(
           "INSERT INTO domains (domain_name, available, price, reserved_at) VALUES (?, 0, ?, ?)",
         ).run(domainName, price, new Date().toISOString());
+        insertRecord.run(
+          crypto.randomUUID(),
+          domainName,
+          "A",
+          "@",
+          "192.0.2.1",
+          3600,
+          null,
+        );
         return Response.json(
           {
             domain: {
@@ -154,6 +215,68 @@ const server = Bun.serve({
           },
           { status: 201 },
         );
+      }
+
+      const dnsMatch = DOMAIN_RECORDS_RE.exec(url.pathname);
+      if (dnsMatch) {
+        const domain = dnsMatch[1]!.toLowerCase();
+        const recordId = dnsMatch[2];
+        if (!isTaken(domain)) {
+          return Response.json({ message: "domain not found" }, { status: 404 });
+        }
+
+        if (url.pathname === `/v4/domains/${domain}/records` && request.method === "GET") {
+          const rows = listRecords.all(domain) as {
+            id: string; domain_name: string; type: string; host: string; answer: string; ttl: number; priority: number | null;
+          }[];
+          return Response.json({ records: rows.map(recordShape) });
+        }
+
+        if (url.pathname === `/v4/domains/${domain}/records` && request.method === "POST") {
+          const body = await readJson(request);
+          const type = String(body.type ?? "").toUpperCase();
+          const host = String(body.host ?? "@").toLowerCase();
+          const answer = String(body.answer ?? "");
+          const ttl = Number(body.ttl ?? 3600);
+          const priority = body.priority === undefined || body.priority === null ? null : Number(body.priority);
+          if (!type || !answer) {
+            return Response.json({ message: "type and answer are required" }, { status: 400 });
+          }
+          const id = crypto.randomUUID();
+          insertRecord.run(id, domain, type, host, answer, ttl, priority);
+          const row = findRecord.get(id, domain) as {
+            id: string; domain_name: string; type: string; host: string; answer: string; ttl: number; priority: number | null;
+          };
+          return Response.json({ record: recordShape(row) }, { status: 201 });
+        }
+
+        if (recordId && url.pathname === `/v4/domains/${domain}/records/${recordId}`) {
+          const existing = findRecord.get(recordId, domain) as {
+            id: string; domain_name: string; type: string; host: string; answer: string; ttl: number; priority: number | null;
+          } | null;
+          if (!existing) {
+            return Response.json({ message: "record not found" }, { status: 404 });
+          }
+
+          if (request.method === "PUT") {
+            const body = await readJson(request);
+            const type = String(body.type ?? existing.type).toUpperCase();
+            const host = String(body.host ?? existing.host).toLowerCase();
+            const answer = String(body.answer ?? existing.answer);
+            const ttl = body.ttl === undefined ? Number(existing.ttl) : Number(body.ttl);
+            const priority = body.priority === undefined || body.priority === null ? (existing.priority ?? null) : Number(body.priority);
+            updateRecord.run(type, host, answer, ttl, priority, recordId, domain);
+            const row = findRecord.get(recordId, domain) as {
+              id: string; domain_name: string; type: string; host: string; answer: string; ttl: number; priority: number | null;
+            };
+            return Response.json({ record: recordShape(row) });
+          }
+
+          if (request.method === "DELETE") {
+            deleteRecord.run(recordId, domain);
+            return new Response(null, { status: 204 });
+          }
+        }
       }
     } catch (err) {
       if (err instanceof Response) return err;

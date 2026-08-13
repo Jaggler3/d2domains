@@ -30,6 +30,14 @@ const registerSchema = z.object({
   years: z.number().int().min(1).max(10).default(1),
 });
 
+const dnsRecordSchema = z.object({
+  type: z.string().min(1).max(16),
+  host: z.string().min(1).max(253),
+  answer: z.string().min(1).max(4096),
+  ttl: z.number().int().positive().max(86400).optional(),
+  priority: z.number().int().min(0).max(65535).nullable().optional(),
+});
+
 export class HeronError extends Error {
   constructor(
     message: string,
@@ -93,5 +101,45 @@ export function createRegistryController(redis: Redis) {
     );
   }
 
-  return { search, checkAvailability, register };
+  function domainNameOf(c: Context): string {
+    const name = c.req.param("domainName");
+    if (!name) throw new HeronError("domainName is required", 422);
+    return name.toLowerCase();
+  }
+
+  async function listDnsRecords(c: Context) {
+    await gate(c);
+    const res = await registry.listDnsRecords(domainNameOf(c));
+    return c.json({ records: res.records });
+  }
+
+  async function createDnsRecord(c: Context) {
+    await gate(c);
+    const body = await c.req.json().catch(() => null);
+    const parsed = dnsRecordSchema.safeParse(body);
+    if (!parsed.success) throw new HeronError("invalid dns record", 422);
+    const res = await registry.createDnsRecord(domainNameOf(c), parsed.data);
+    return c.json({ record: res.record }, 201);
+  }
+
+  async function updateDnsRecord(c: Context) {
+    await gate(c);
+    const recordId = c.req.param("recordId");
+    if (!recordId) throw new HeronError("recordId is required", 422);
+    const body = await c.req.json().catch(() => null);
+    const parsed = dnsRecordSchema.safeParse(body);
+    if (!parsed.success) throw new HeronError("invalid dns record", 422);
+    const res = await registry.updateDnsRecord(domainNameOf(c), recordId, parsed.data);
+    return c.json({ record: res.record });
+  }
+
+  async function deleteDnsRecord(c: Context) {
+    await gate(c);
+    const recordId = c.req.param("recordId");
+    if (!recordId) throw new HeronError("recordId is required", 422);
+    await registry.deleteDnsRecord(domainNameOf(c), recordId);
+    return c.body(null, 204);
+  }
+
+  return { search, checkAvailability, register, listDnsRecords, createDnsRecord, updateDnsRecord, deleteDnsRecord };
 }

@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { domainsController } from "../controllers/domains.controller";
 import { ordersController } from "../controllers/orders.controller";
+import { dnsController } from "../controllers/dns.controller";
 import { requireAuth } from "../middleware/auth";
 import { rateLimit } from "../middleware/rate-limit";
 import { clientIp } from "../lib/ip";
@@ -33,6 +34,11 @@ domainsRouter.post(
 );
 
 domainsRouter.get("/", requireAuth, (c) => ordersController.list(c));
+
+domainsRouter.get("/:domainName/dns", requireAuth, (c) => dnsController.list(c));
+domainsRouter.post("/:domainName/dns", requireAuth, (c) => dnsController.create(c));
+domainsRouter.patch("/:domainName/dns/:recordId", requireAuth, (c) => dnsController.update(c));
+domainsRouter.delete("/:domainName/dns/:recordId", requireAuth, (c) => dnsController.remove(c));
 
 export const ordersRouter = new Hono();
 

@@ -11,6 +11,24 @@ export interface RegistrySearchResult {
   renewalPrice?: number;
 }
 
+export interface RegistryDnsRecord {
+  id: string;
+  type: string;
+  host: string;
+  fqdn: string;
+  answer: string;
+  ttl: number;
+  priority: number | null;
+}
+
+export interface NewDnsRecord {
+  type: string;
+  host: string;
+  answer: string;
+  ttl?: number;
+  priority?: number | null;
+}
+
 export interface RegistryConfig {
   baseUrl: string;
   username: string;
@@ -54,9 +72,12 @@ function parseRetryAfter(value: string | null): number | null {
 export function createRegistryClient(config: RegistryConfig) {
   const cfg = { ...DEFAULT_CONFIG, ...config };
 
-  async function request<T>(path: string, body: unknown): Promise<T> {
+  async function request<T>(
+    path: string,
+    init: { method?: string; body?: unknown } = {},
+  ): Promise<T> {
     return withRetry(
-      () => registryFetch<T>(path, body),
+      () => registryFetch<T>(path, init),
       {
         maxAttempts: cfg.maxAttempts,
         baseDelayMs: cfg.baseDelayMs,
@@ -69,18 +90,21 @@ export function createRegistryClient(config: RegistryConfig) {
     );
   }
 
-  async function registryFetch<T>(path: string, body: unknown): Promise<T> {
+  async function registryFetch<T>(
+    path: string,
+    init: { method?: string; body?: unknown },
+  ): Promise<T> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), cfg.timeoutMs);
     let res: Response;
     try {
       res = await fetch(`${cfg.baseUrl}${path}`, {
-        method: "POST",
+        method: init.method ?? "POST",
         headers: {
           Authorization: basicAuth(cfg.username, cfg.token),
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(body),
+        body: init.body === undefined ? undefined : JSON.stringify(init.body),
         signal: controller.signal,
       });
     } catch {
@@ -98,20 +122,20 @@ export function createRegistryClient(config: RegistryConfig) {
         res.status === 429 ? parseRetryAfter(res.headers.get("retry-after")) : null,
       );
     }
+    if (res.status === 204) return undefined as T;
     return (await res.json()) as T;
   }
 
   return {
     search(keyword: string, tldFilter?: string[], timeoutMs = 2000) {
-      return request<{ results: RegistrySearchResult[] }>(
-        "/v4/domains:search",
-        { keyword, timeout: timeoutMs, ...(tldFilter ? { tldFilter } : {}) },
-      );
+      return request<{ results: RegistrySearchResult[] }>("/v4/domains:search", {
+        body: { keyword, timeout: timeoutMs, ...(tldFilter ? { tldFilter } : {}) },
+      });
     },
     checkAvailability(domainNames: string[]) {
       return request<{ results: RegistrySearchResult[] }>(
         "/v4/domains:checkAvailability",
-        { domainNames },
+        { body: { domainNames } },
       );
     },
     createDomain(input: {
@@ -123,11 +147,37 @@ export function createRegistryClient(config: RegistryConfig) {
       return request<{ domain: { domainName: string }; order: number; totalPaid: number }>(
         "/v4/domains",
         {
-          domain: { domainName: input.domainName },
-          purchasePrice: input.purchasePrice,
-          purchaseType: input.purchaseType,
-          years: input.years,
+          body: {
+            domain: { domainName: input.domainName },
+            purchasePrice: input.purchasePrice,
+            purchaseType: input.purchaseType,
+            years: input.years,
+          },
         },
+      );
+    },
+    listDnsRecords(domainName: string) {
+      return request<{ records: RegistryDnsRecord[] }>(
+        `/v4/domains/${encodeURIComponent(domainName)}/records`,
+        { method: "GET" },
+      );
+    },
+    createDnsRecord(domainName: string, record: NewDnsRecord) {
+      return request<{ record: RegistryDnsRecord }>(
+        `/v4/domains/${encodeURIComponent(domainName)}/records`,
+        { body: record },
+      );
+    },
+    updateDnsRecord(domainName: string, recordId: string, record: NewDnsRecord) {
+      return request<{ record: RegistryDnsRecord }>(
+        `/v4/domains/${encodeURIComponent(domainName)}/records/${recordId}`,
+        { method: "PUT", body: record },
+      );
+    },
+    deleteDnsRecord(domainName: string, recordId: string) {
+      return request<undefined>(
+        `/v4/domains/${encodeURIComponent(domainName)}/records/${recordId}`,
+        { method: "DELETE" },
       );
     },
   };

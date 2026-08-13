@@ -86,7 +86,7 @@ Durable production data = **Postgres** (one instance, one DB per service). **sql
 
 ## Direction / roadmap
 
-Completed: login, public search, buy flow, dashboard. In progress: DNS management (otter + sync to name.com). 
+Completed: login, public search, buy flow, dashboard, DNS management (otter + sync to name.com via heron, domain detail page).
 Future:
 - Registrar settings on the domain page (autorenew, whois privacy, nameservers, lock) via name.com API through heron
 - Hardening: shared internal-auth token between services, tests for the purchase/DNS worker sagas, observability (logs/metrics/traces)

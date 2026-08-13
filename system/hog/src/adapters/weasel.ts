@@ -86,5 +86,10 @@ export function createWeaselClient(config: { baseUrl: string }) {
         `/internal/domains?userId=${encodeURIComponent(userId)}`,
       );
     },
+    getDomain(domainName: string, userId: string) {
+      return req<{ domain: DomainRow }>(
+        `/internal/domains/${encodeURIComponent(domainName)}?userId=${encodeURIComponent(userId)}`,
+      );
+    },
   };
 }
