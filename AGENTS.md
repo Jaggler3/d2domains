@@ -26,7 +26,7 @@ Every service is a folder under `system/<animal>/`, runs on Bun, HTTP via Hono, 
 | **hog** | 8787 | auth (users/sessions), BFF/API surface | Postgres `d2gres` | API gateway. Only thing the client talks to (via `src/proxy.ts`) |
 | **heron** | 8783 | registry integration | none (Redis for rate limiter) | ONLY service that talks to name.com. Retry/backoff, circuit breaker, normalization, token-bucket rate limit |
 | **weasel** | 8781 | domains + orders | Postgres `d2weasel` | Source of truth for what users own |
-| **wombat** | 8782 | charges/ledger | Postgres `d2wombat` | Fake payment, always succeeds, idempotent by orderId |
+| **wombat** | 8782 | payment methods, charges, ledger | Postgres `d2wombat` | Fake processor (configurable decline via `FAKE_PAYMENT_FAIL_MIN_CENTS`), idempotent by orderId, refunds, ledger entries |
 | **badger** | — | nothing (stateless worker) | none | BullMQ `purchases` consumer: charge → register → create domain → mark purchased |
 | **beaver** | — | nothing (stateless worker) | sqlite `search_logs` | BullMQ `domains-jobs` consumer (search analytics) |
 | **mockingbird** | 8890 | fake name.com | sqlite | Implements name.com v4 API (search/checkAvailability/create/DNS) for mock compose |
@@ -89,9 +89,9 @@ Durable production data = **Postgres** (one instance, one DB per service). **sql
 
 Completed: login, public search, buy flow, dashboard, DNS management (otter + sync to name.com via heron, domain detail page), registrar settings (autorenew, whois privacy, transfer lock, nameservers).
 Hardening (done): internal-auth token (`x-internal-token`, `INTERNAL_TOKEN` env) enforced on heron/weasel/wombat/otter and sent by hog/badger/otter; worker saga tests (badger purchase, otter dns-sync via `createSyncProcessor`); request-id propagation (`x-request-id` through hog→weasel/otter/heron) + structured JSON request logs + hog `/metrics` (Prometheus text); DNS-sync idempotency (reconcile-adopt on duplicate create).
+Billing depth (done): wombat payment methods (CRUD + default), charge lifecycle (pending→succeeded/failed/refunded) behind a `PaymentProcessor` interface with a fake processor that declines charges ≥ `FAKE_PAYMENT_FAIL_MIN_CENTS` (0 = never), refunds, and a `ledger_entries` audit log. badger treats a declined charge as terminal (order failed). Real provider (Stripe) = a new `PaymentProcessor` impl.
+Client polish (done): order history page (`/account/orders`), whois/registrant contacts on the domain detail page, per-user rate limits on DNS/settings (namespaced buckets), per-domain search-cache invalidation on buy.
 Up next (agreed order):
-- **Billing depth**: wombat is a fake always-succeeds payment; real provider + ledger depth later.
-- **Client polish**: order history page (orders exist in the API), whois info on the detail page, rate-limit DNS/settings endpoints, per-domain search-cache invalidation.
 - **Deploy** is intentionally deferred (managed Postgres, hosts, CI, TLS) — everything runs locally/compose.
 - **Future service extractions** on trigger (don't pre-build): notifications (nightingale), identity (meerkat), events (kestrel), etc.
 Long-term product goals: sell/include **email services** and **hosting services** alongside domains.

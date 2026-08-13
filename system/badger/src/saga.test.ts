@@ -138,4 +138,23 @@ describe("purchase saga", () => {
       "charge declined",
     );
   });
+
+  test("marks order failed when the charge succeeds but the processor declined", async () => {
+    const calls = stubRoutes([
+      { method: "GET", urlIncludes: "/internal/orders/o1", status: 200, body: { order } },
+      {
+        method: "POST",
+        urlIncludes: "/internal/charges",
+        status: 201,
+        body: { charge: { status: "failed", failureReason: "card declined (test rule)" }, reused: false },
+      },
+      { method: "PATCH", urlIncludes: "/internal/orders/o1", status: 200, body: { order } },
+    ]);
+    await expect(processPurchase("o1")).resolves.toBeUndefined();
+    const patches = calls.filter((c) => c.method === "PATCH");
+    expect(patches.at(-1)?.body).toMatchObject({ status: "failed" });
+    expect(String((patches.at(-1)?.body as { error?: string }).error ?? "")).toContain(
+      "payment declined",
+    );
+  });
 });

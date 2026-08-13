@@ -77,6 +77,13 @@ export async function chargeWombat(order: Order): Promise<void> {
   if ((data as { reused?: boolean }).reused === undefined && status >= 300) {
     throw new WorkerError(`unexpected charge response ${status}`, true);
   }
+  const chargeStatus = (data as { charge?: { status?: string } }).charge?.status;
+  if (chargeStatus === "failed") {
+    throw new WorkerError(
+      `payment declined: ${(data as { charge?: { failureReason?: string } }).charge?.failureReason ?? "card declined"}`,
+      false,
+    );
+  }
 }
 
 export async function registerAtRegistry(order: Order): Promise<void> {
