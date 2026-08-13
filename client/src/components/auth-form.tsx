@@ -6,6 +6,7 @@ import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { buyDomain } from "@/lib/buy-domain";
 
 export function AuthForm({ mode }: { mode: "login" | "register" }) {
   const router = useRouter();
@@ -32,7 +33,14 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
       if (!res.ok) {
         throw new Error(data?.error ?? "something went wrong");
       }
-      router.push("/");
+      const pending = window.localStorage.getItem("pendingBuy");
+      if (pending) {
+        window.localStorage.removeItem("pendingBuy");
+        const result = await buyDomain(pending);
+        router.push(result.unauthorized ? "/" : "/account");
+      } else {
+        router.push("/");
+      }
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "something went wrong");

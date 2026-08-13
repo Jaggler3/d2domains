@@ -2,12 +2,13 @@ import { withRetry } from "../lib/retry";
 
 export interface RegistrySearchResult {
   domainName: string;
-  sld: string;
-  tld: string;
-  purchasable: boolean;
-  purchasePrice: number;
-  purchaseType: string;
-  renewalPrice: number;
+  sld?: string;
+  tld?: string;
+  purchasable?: boolean;
+  premium?: boolean;
+  purchasePrice?: number;
+  purchaseType?: string;
+  renewalPrice?: number;
 }
 
 export interface RegistryConfig {
@@ -111,6 +112,22 @@ export function createRegistryClient(config: RegistryConfig) {
       return request<{ results: RegistrySearchResult[] }>(
         "/v4/domains:checkAvailability",
         { domainNames },
+      );
+    },
+    createDomain(input: {
+      domainName: string;
+      purchasePrice: number;
+      purchaseType: string;
+      years: number;
+    }) {
+      return request<{ domain: { domainName: string }; order: number; totalPaid: number }>(
+        "/v4/domains",
+        {
+          domain: { domainName: input.domainName },
+          purchasePrice: input.purchasePrice,
+          purchaseType: input.purchaseType,
+          years: input.years,
+        },
       );
     },
   };

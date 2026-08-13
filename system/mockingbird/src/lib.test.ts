@@ -39,13 +39,9 @@ describe("basePrice", () => {
 });
 
 describe("searchCandidates", () => {
-  test("marks known-taken domains unavailable even when hash says available", () => {
+  test("marks known-taken domains as bare {domainName,sld,tld}", () => {
     const results = searchCandidates("example", ["com"], () => true);
-    expect(results[0]).toMatchObject({
-      domainName: "example.com",
-      purchasable: false,
-      purchaseType: "unavailable",
-    });
+    expect(results[0]).toEqual({ domainName: "example.com", sld: "example", tld: "com" });
   });
 
   test("generates results per requested tld only", () => {
@@ -68,8 +64,13 @@ describe("checkCandidates", () => {
     expect(results.map((r) => r.domainName)).toEqual(["foo.com", "bar.net"]);
   });
 
-  test("rejects malformed names", () => {
+  test("drops malformed names (real API omits them)", () => {
     const results = checkCandidates(["notadomain"], () => false);
-    expect(results[0]).toMatchObject({ purchasable: false, purchaseType: "invalid" });
+    expect(results).toEqual([]);
+  });
+
+  test("unavailable names are bare {domainName,sld,tld}", () => {
+    const results = checkCandidates(["example.com"], () => true);
+    expect(results[0]).toEqual({ domainName: "example.com", sld: "example", tld: "com" });
   });
 });

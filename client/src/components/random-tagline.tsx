@@ -1,6 +1,6 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 
 const taglines = [
   "find your corner of the web.",
@@ -16,17 +16,35 @@ const randomTagline = taglines[Math.floor(Math.random() * taglines.length)];
 
 const subscribe = () => () => {};
 
-export function RandomTagline() {
+export function RandomTagline({
+  anchorRef,
+  showInlineCursor = true,
+  onAnchorReady,
+}: {
+  anchorRef?: React.Ref<HTMLSpanElement>;
+  showInlineCursor?: boolean;
+  onAnchorReady?: () => void;
+}) {
   const tagline = useSyncExternalStore(
     subscribe,
     () => randomTagline,
     () => "",
   );
 
+  useEffect(() => {
+    if (tagline) onAnchorReady?.();
+  }, [tagline, onAnchorReady]);
+
   return (
     <h1 className="text-balance px-4 text-center font-pixel text-lg leading-relaxed text-foreground sm:text-2xl">
       {tagline || "\u00a0"}
-      <span className="ml-1 animate-blink text-primary">▍</span>
+      {showInlineCursor ? (
+        <span className="ml-1 animate-blink text-primary">▍</span>
+      ) : (
+        <span ref={anchorRef} aria-hidden className="inline-block w-0">
+          &nbsp;
+        </span>
+      )}
     </h1>
   );
 }

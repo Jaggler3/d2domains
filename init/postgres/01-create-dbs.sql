@@ -1,0 +1,2 @@
+CREATE DATABASE d2weasel;
+CREATE DATABASE d2wombat;

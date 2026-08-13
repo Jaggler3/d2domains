@@ -1,15 +1,11 @@
 import { redis, enqueueSearchLog } from "./queue";
-import { createRegistryClient, type RegistrySearchResult } from "../adapters/namecom";
+import { createRegistryClient, type DomainSearchResult } from "../adapters/registry";
 import { HttpError } from "../lib/http";
 import { loadEnv } from "../config/env";
 
 const env = loadEnv();
 
-const registry = createRegistryClient({
-  baseUrl: env.NAME_COM_BASE,
-  username: env.NAME_COM_USERNAME,
-  token: env.NAME_COM_TOKEN,
-});
+const registry = createRegistryClient({ baseUrl: env.REGISTRY_URL });
 
 export interface DomainSearchInput {
   keyword: string;
@@ -19,7 +15,7 @@ export interface DomainSearchInput {
 export async function searchDomains(
   input: DomainSearchInput,
   userId: string,
-): Promise<RegistrySearchResult[]> {
+): Promise<DomainSearchResult[]> {
   const keyword = input.keyword.trim().toLowerCase();
   if (!keyword) throw new HttpError("keyword is required", 422);
 
@@ -28,18 +24,18 @@ export async function searchDomains(
 
   const cached = await redis.get(cacheKey);
   if (cached) {
-    const results = JSON.parse(cached) as RegistrySearchResult[];
+    const results = JSON.parse(cached) as DomainSearchResult[];
     void enqueueSearchLog({ userId, keyword, resultCount: results.length, cached: true });
     return results;
   }
 
-  let results: RegistrySearchResult[];
+  let results: DomainSearchResult[];
   try {
-    const raw = await registry.search(keyword, tlds);
-    results = raw.results;
+    const res = await registry.search(keyword, tlds);
+    results = res.results;
   } catch (err) {
-    if (err instanceof Error && err.message.includes("circuit breaker")) {
-      throw new HttpError("domain registry is temporarily unavailable", 503);
+    if (err instanceof HttpError && err.status === 429) {
+      throw new HttpError("search rate limit exceeded, try again shortly", 429);
     }
     throw new HttpError("failed to search domains", 502);
   }

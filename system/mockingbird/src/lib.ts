@@ -46,9 +46,10 @@ export interface MockSearchResult {
   domainName: string;
   sld: string;
   tld: string;
-  purchasable: boolean;
+  purchasable?: boolean;
+  premium?: boolean;
   purchasePrice?: number;
-  purchaseType: string;
+  purchaseType?: string;
   renewalPrice?: number;
 }
 
@@ -61,23 +62,11 @@ export function searchCandidates(
   return tlds.map((tld) => {
     const domainName = `${sld}.${tld}`;
     if (isTaken(domainName)) {
-      return {
-        domainName,
-        sld,
-        tld,
-        purchasable: false,
-        purchaseType: "unavailable",
-      };
+      return { domainName, sld, tld };
     }
     const state = hashState(sld, tld);
     if (state === "taken") {
-      return {
-        domainName,
-        sld,
-        tld,
-        purchasable: false,
-        purchaseType: "unavailable",
-      };
+      return { domainName, sld, tld };
     }
     const price = basePrice(tld);
     if (state === "premium") {
@@ -86,8 +75,9 @@ export function searchCandidates(
         sld,
         tld,
         purchasable: true,
+        premium: true,
         purchasePrice: round2(price * 15),
-        purchaseType: "premium",
+        purchaseType: "registration",
         renewalPrice: round2(price * 15),
       };
     }
@@ -107,41 +97,30 @@ export function checkCandidates(
   domainNames: string[],
   isTaken: (domain: string) => boolean,
 ): MockSearchResult[] {
-  return domainNames.map((domainName) => {
-    const lower = domainName.toLowerCase();
-    const dot = lower.lastIndexOf(".");
-    if (dot <= 0 || dot === lower.length - 1) {
-      return {
-        domainName,
-        sld: lower,
-        tld: "",
-        purchasable: false,
-        purchaseType: "invalid",
-      };
-    }
-    const sld = lower.slice(0, dot);
-    const tld = lower.slice(dot + 1);
-    const taken = isTaken(lower) || hashState(sld, tld) === "taken";
+  const results: MockSearchResult[] = [];
+  for (const raw of domainNames) {
+    const domainName = raw.toLowerCase();
+    const dot = domainName.lastIndexOf(".");
+    if (dot <= 0 || dot === domainName.length - 1) continue;
+    const sld = domainName.slice(0, dot);
+    const tld = domainName.slice(dot + 1);
+    const taken = isTaken(domainName) || hashState(sld, tld) === "taken";
     if (taken) {
-      return {
-        domainName: lower,
-        sld,
-        tld,
-        purchasable: false,
-        purchaseType: "unavailable",
-      };
+      results.push({ domainName, sld, tld });
+      continue;
     }
     const price = basePrice(tld);
-    return {
-      domainName: lower,
+    results.push({
+      domainName,
       sld,
       tld,
       purchasable: true,
       purchasePrice: price,
       purchaseType: "registration",
       renewalPrice: price,
-    };
-  });
+    });
+  }
+  return results;
 }
 
 function round2(n: number): number {

@@ -1,70 +1,36 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Loader2, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { buyDomain } from "@/lib/buy-domain";
+import { measureCaretIn, type CaretAnchor } from "@/lib/caret";
 
 interface SearchResult {
   domainName: string;
   purchasable: boolean;
-  purchasePrice?: number;
+  purchasePrice: number | null;
 }
 
-const TLD_PRICES: Record<string, number> = {
-  com: 11.99,
-  net: 13.99,
-  org: 9.99,
-  io: 45.99,
-  dev: 12.99,
-  ai: 89.99,
-  co: 29.99,
-};
-
-const SUFFIXES = ["", "-hub", "-lab", "-studio", "-co", "-app", "-dev", "-site"];
-
-function seeded(seed: string) {
-  let h = 2166136261;
-  for (let i = 0; i < seed.length; i++) {
-    h ^= seed.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return () => {
-    h ^= h << 13;
-    h ^= h >>> 17;
-    h ^= h << 5;
-    return ((h >>> 0) % 1000) / 1000;
-  };
-}
-
-function buildTestResults(keyword: string): SearchResult[] {
-  const base = keyword
-    .toLowerCase()
-    .replace(/[^a-z0-9-]/g, "")
-    .replace(/^-+|-+$/g, "");
-  if (!base) return [];
-
-  const rand = seeded(base);
-  const tlds = Object.keys(TLD_PRICES);
-
-  return SUFFIXES.map((suffix) => {
-    const tld = tlds[Math.floor(rand() * tlds.length)];
-    const domainName = `${base}${suffix}.${tld}`;
-    const purchasable = rand() > 0.3;
-    return {
-      domainName,
-      purchasable,
-      purchasePrice: purchasable
-        ? TLD_PRICES[tld] + Math.round(rand() * 40) / 10
-        : undefined,
-    };
-  });
-}
-
-export function DomainSearch() {
+export function DomainSearch({
+  hideCaret = false,
+  onFocusChange,
+  onCaretChange,
+  onResultsChange,
+}: {
+  hideCaret?: boolean;
+  onFocusChange?: (focused: boolean) => void;
+  onCaretChange?: (anchor: CaretAnchor | null) => void;
+  onResultsChange?: (hasResults: boolean) => void;
+}) {
+  const router = useRouter();
   const [query, setQuery] = useState("");
   const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [buying, setBuying] = useState<string | null>(null);
   const [result, setResult] = useState<{
     keyword: string;
     items: SearchResult[];
@@ -75,49 +41,112 @@ export function DomainSearch() {
     if (keyword.length < 2) {
       const id = setTimeout(() => {
         setPending(false);
+        setError(null);
         setResult(null);
+        onResultsChange?.(false);
       }, 0);
       return () => clearTimeout(id);
     }
-    const id = setTimeout(() => {
-      setResult({ keyword, items: buildTestResults(keyword) });
-      setPending(false);
+    let cancelled = false;
+    const id = setTimeout(async () => {
+      try {
+        const res = await fetch("/api/v1/domains/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ keyword }),
+        });
+        if (res.status === 429) {
+          throw new Error("you're searching too fast, take a breather");
+        }
+        const data = (await res.json().catch(() => null)) as {
+          results?: SearchResult[];
+          error?: string;
+        } | null;
+        if (!res.ok) throw new Error(data?.error ?? "search failed");
+        if (cancelled) return;
+        setResult({ keyword, items: data?.results ?? [] });
+        setError(null);
+        onResultsChange?.(true);
+      } catch (err) {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : "search failed");
+        setResult(null);
+        onResultsChange?.(false);
+      } finally {
+        if (!cancelled) setPending(false);
+      }
     }, 300);
-    return () => clearTimeout(id);
-  }, [query]);
+    return () => {
+      cancelled = true;
+      clearTimeout(id);
+    };
+  }, [query, onResultsChange]);
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     setQuery(e.target.value);
     setPending(true);
   }
 
+  async function buy(domainName: string) {
+    setBuying(domainName);
+    try {
+      const result = await buyDomain(domainName);
+      if (result.unauthorized) {
+        window.localStorage.setItem("pendingBuy", domainName);
+        router.push("/login");
+        return;
+      }
+      if (!result.ok) throw new Error(result.error ?? "purchase failed");
+      router.push("/account");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "purchase failed");
+    } finally {
+      setBuying(null);
+    }
+  }
+
   return (
     <div className="mx-auto flex w-full max-w-xl flex-col gap-3">
-      <form
-        className="flex items-center gap-2 rounded-xl border border-border bg-card p-2 shadow-lg shadow-primary/5 transition-colors focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/25"
-        onSubmit={(e) => e.preventDefault()}
-      >
+      <div className="flex items-center gap-2 rounded-xl border border-border bg-card p-2 shadow-lg shadow-primary/5 transition-colors focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/25">
         {pending ? (
           <Loader2 className="ml-2 size-4 shrink-0 animate-spin text-primary" />
         ) : (
           <Search className="ml-2 size-4 shrink-0 text-muted-foreground" />
         )}
         <Input
+          id="domain-search-input"
           value={query}
           onChange={handleChange}
+          onFocus={(e) => {
+            onFocusChange?.(true);
+            const el = e.currentTarget;
+            window.setTimeout(() => {
+              if (document.activeElement === el) {
+                onCaretChange?.(measureCaretIn(el));
+              }
+            }, 0);
+          }}
+          onBlur={() => {
+            onFocusChange?.(false);
+            onCaretChange?.(null);
+          }}
+          onSelect={(e) => onCaretChange?.(measureCaretIn(e.currentTarget))}
           placeholder="search for a domain"
-          className="border-0 bg-transparent shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+          className={cn(
+            "h-9 rounded-none border-0 bg-transparent py-0 leading-9 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0",
+            hideCaret && "caret-transparent",
+          )}
           aria-label="domain search"
         />
-        <Button type="submit" size="lg" disabled={!query.trim()}>
-          search
-        </Button>
-      </form>
+      </div>
+
+      {error && <p className="px-1 text-sm text-destructive">{error}</p>}
 
       {result && (
         <ul
           className={cn(
-            "animate-slide-up divide-y divide-border overflow-hidden rounded-xl border border-border bg-card shadow-lg shadow-primary/5",
+            "animate-slide-up divide-y divide-border overflow-x-hidden overflow-y-auto rounded-xl border border-border bg-card shadow-lg shadow-primary/5",
+            "max-h-[45vh]",
             pending && "pointer-events-none opacity-60",
           )}
         >
@@ -136,9 +165,16 @@ export function DomainSearch() {
               {r.purchasable ? (
                 <span className="flex shrink-0 items-center gap-3">
                   <span className="text-sm font-medium">
-                    ${r.purchasePrice?.toFixed(2)}
+                    {r.purchasePrice != null ? `$${r.purchasePrice.toFixed(2)}` : "available"}
                   </span>
-                  <Button size="sm">get it</Button>
+                  <Button
+                    size="sm"
+                    onClick={() => buy(r.domainName)}
+                    disabled={buying !== null}
+                  >
+                    {buying === r.domainName && <Loader2 className="animate-spin" />}
+                    get it
+                  </Button>
                 </span>
               ) : (
                 <span className="shrink-0 text-xs text-muted-foreground">

@@ -1,6 +1,8 @@
+"use client";
+
+import { usePathname } from "next/navigation";
 import {
   LayoutGrid,
-  Globe,
   Network,
   ArrowLeftRight,
   CreditCard,
@@ -11,8 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
 const navItems = [
-  { label: "overview", icon: LayoutGrid, href: "/account", ready: true },
-  { label: "domains", icon: Globe, href: "/account", ready: false },
+  { label: "dashboard", icon: LayoutGrid, href: "/account", ready: true },
   { label: "dns", icon: Network, href: "/account", ready: false },
   { label: "transfers", icon: ArrowLeftRight, href: "/account", ready: false },
   { label: "billing", icon: CreditCard, href: "/account", ready: false },
@@ -20,10 +21,16 @@ const navItems = [
 ];
 
 export function AccountNav() {
+  const pathname = usePathname();
+
   return (
     <nav className="flex gap-1 overflow-x-auto p-2 md:flex-col md:overflow-visible md:p-0">
       {navItems.map((item) => {
-        const active = item.ready && item.label === "overview";
+        const active =
+          item.ready &&
+          (item.href === "/account"
+            ? pathname === "/account"
+            : pathname.startsWith(item.href));
         return (
           <Button
             key={item.label}

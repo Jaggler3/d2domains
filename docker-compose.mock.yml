@@ -1,0 +1,30 @@
+# Mock override: fake name.com (mockingbird) instead of the real registry.
+# heron is the only service that talks to the registry, so only heron's
+# upstream changes. hog and badger still point at heron.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.mock.yml up --watch
+services:
+  heron:
+    environment:
+      NAME_COM_BASE: http://mockingbird:8890
+    depends_on:
+      mockingbird:
+        condition: service_started
+
+  mockingbird:
+    build:
+      context: ./system/mockingbird
+    command: bun run --watch src/index.ts
+    env_file: ./.env
+    ports:
+      - "8890:8890"
+    develop:
+      watch:
+        - action: sync
+          path: ./system/mockingbird
+          target: /app
+          ignore:
+            - node_modules
+            - .env*
+            - data
+        - action: rebuild
+          path: ./system/mockingbird/package.json

@@ -1,0 +1,35 @@
+# Production override: real name.com prod API instead of the dev API.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# NOTE: registry credentials come from env_file ./.env — for prod, that file
+# must contain the prod NAME_COM_USERNAME/NAME_COM_TOKEN (the values at the
+# bottom of the current .env). Non-secret prod settings are overridden here.
+services:
+  hog:
+    command: bun run src/index.ts
+    environment:
+      COOKIE_SECURE: "true"
+      APP_ENV: production
+    restart: unless-stopped
+
+  heron:
+    command: bun run src/index.ts
+    environment:
+      NAME_COM_BASE: https://api.name.com
+    restart: unless-stopped
+
+  weasel:
+    command: bun run src/index.ts
+    restart: unless-stopped
+
+  wombat:
+    command: bun run src/index.ts
+    restart: unless-stopped
+
+  badger:
+    command: bun run src/index.ts
+    restart: unless-stopped
+
+  beaver:
+    command: bun run src/index.ts
+    restart: unless-stopped

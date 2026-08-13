@@ -2,16 +2,14 @@ import { describe, expect, test } from "bun:test";
 import { loadEnv } from "./env";
 
 const BASE = {
-  NAME_COM_USERNAME: "user",
-  NAME_COM_TOKEN: "token",
   DATABASE_URL: "postgresql://localhost:5432/d2gres",
 };
 
 describe("loadEnv", () => {
   test("parses a complete env", () => {
     const env = loadEnv(BASE);
-    expect(env.NAME_COM_USERNAME).toBe("user");
-    expect(env.NAME_COM_BASE).toBe("https://api.dev.name.com");
+    expect(env.REGISTRY_URL).toBe("http://localhost:8783");
+    expect(env.WEASEL_URL).toBe("http://localhost:8781");
     expect(env.PORT).toBe(8787);
     expect(env.COOKIE_SECURE).toBe(false);
   });
@@ -26,8 +24,8 @@ describe("loadEnv", () => {
     expect(env.COOKIE_SECURE).toBe(true);
   });
 
-  test("rejects a non-url base", () => {
-    expect(() => loadEnv({ ...BASE, NAME_COM_BASE: "not a url" })).toThrow(
+  test("rejects a non-url registry url", () => {
+    expect(() => loadEnv({ ...BASE, REGISTRY_URL: "not a url" })).toThrow(
       /invalid environment/,
     );
   });

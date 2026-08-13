@@ -5,9 +5,11 @@ services:
     command: bun run --watch src/index.ts
     env_file: ./.env
     environment:
-      NAME_COM_BASE: http://mockingbird:8890
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/d2gres
       REDIS_URL: redis://redis:6379
+      REGISTRY_URL: http://heron:8783
+      WEASEL_URL: http://weasel:8781
+      WOMBAT_URL: http://wombat:8782
       PORT: 8787
       CLIENT_ORIGIN: http://localhost:3000
     ports:
@@ -17,6 +19,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      heron:
+        condition: service_started
     develop:
       watch:
         - action: sync
@@ -28,6 +32,106 @@ services:
             - data
         - action: rebuild
           path: ./system/hog/package.json
+
+  heron:
+    build:
+      context: ./system/heron
+    command: bun run --watch src/index.ts
+    env_file: ./.env
+    environment:
+      HERON_PORT: 8783
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "8783:8783"
+    depends_on:
+      redis:
+        condition: service_healthy
+    develop:
+      watch:
+        - action: sync
+          path: ./system/heron
+          target: /app
+          ignore:
+            - node_modules
+            - .env*
+            - data
+        - action: rebuild
+          path: ./system/heron/package.json
+
+  weasel:
+    build:
+      context: ./system/weasel
+    command: bun run --watch src/index.ts
+    env_file: ./.env
+    environment:
+      WEASEL_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/d2weasel
+      WEASEL_PORT: 8781
+    ports:
+      - "8781:8781"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    develop:
+      watch:
+        - action: sync
+          path: ./system/weasel
+          target: /app
+          ignore:
+            - node_modules
+            - .env*
+            - data
+        - action: rebuild
+          path: ./system/weasel/package.json
+
+  wombat:
+    build:
+      context: ./system/wombat
+    command: bun run --watch src/index.ts
+    env_file: ./.env
+    environment:
+      WOMBAT_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/d2wombat
+      WOMBAT_PORT: 8782
+    ports:
+      - "8782:8782"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    develop:
+      watch:
+        - action: sync
+          path: ./system/wombat
+          target: /app
+          ignore:
+            - node_modules
+            - .env*
+            - data
+        - action: rebuild
+          path: ./system/wombat/package.json
+
+  badger:
+    build:
+      context: ./system/badger
+    command: bun run --watch src/index.ts
+    env_file: ./.env
+    environment:
+      REDIS_URL: redis://redis:6379
+      REGISTRY_URL: http://heron:8783
+      WEASEL_URL: http://weasel:8781
+      WOMBAT_URL: http://wombat:8782
+    depends_on:
+      redis:
+        condition: service_healthy
+    develop:
+      watch:
+        - action: sync
+          path: ./system/badger
+          target: /app
+          ignore:
+            - node_modules
+            - .env*
+            - data
+        - action: rebuild
+          path: ./system/badger/package.json
 
   beaver:
     build:
@@ -51,25 +155,6 @@ services:
         - action: rebuild
           path: ./system/beaver/package.json
 
-  mockingbird:
-    build:
-      context: ./system/mockingbird
-    command: bun run --watch src/index.ts
-    env_file: ./.env
-    ports:
-      - "8890:8890"
-    develop:
-      watch:
-        - action: sync
-          path: ./system/mockingbird
-          target: /app
-          ignore:
-            - node_modules
-            - .env*
-            - data
-        - action: rebuild
-          path: ./system/mockingbird/package.json
-
   redis:
     image: redis:7-alpine
     ports:
@@ -90,6 +175,7 @@ services:
       - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./init/postgres:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
