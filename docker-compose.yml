@@ -1,0 +1,100 @@
+services:
+  hog:
+    build:
+      context: ./system/hog
+    command: bun run --watch src/index.ts
+    env_file: ./.env
+    environment:
+      NAME_COM_BASE: http://mockingbird:8890
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/d2gres
+      REDIS_URL: redis://redis:6379
+      PORT: 8787
+      CLIENT_ORIGIN: http://localhost:3000
+    ports:
+      - "8787:8787"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    develop:
+      watch:
+        - action: sync
+          path: ./system/hog
+          target: /app
+          ignore:
+            - node_modules
+            - .env*
+            - data
+        - action: rebuild
+          path: ./system/hog/package.json
+
+  beaver:
+    build:
+      context: ./system/beaver
+    command: bun run --watch src/index.ts
+    env_file: ./.env
+    environment:
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    develop:
+      watch:
+        - action: sync
+          path: ./system/beaver
+          target: /app
+          ignore:
+            - node_modules
+            - .env*
+            - data
+        - action: rebuild
+          path: ./system/beaver/package.json
+
+  mockingbird:
+    build:
+      context: ./system/mockingbird
+    command: bun run --watch src/index.ts
+    env_file: ./.env
+    ports:
+      - "8890:8890"
+    develop:
+      watch:
+        - action: sync
+          path: ./system/mockingbird
+          target: /app
+          ignore:
+            - node_modules
+            - .env*
+            - data
+        - action: rebuild
+          path: ./system/mockingbird/package.json
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: d2gres
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
