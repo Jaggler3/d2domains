@@ -4,6 +4,7 @@ import { ArrowRight, Globe, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { PurchasePoller } from "@/components/purchase-poller";
 import { getMyDomains, getMyOrders } from "@/lib/session";
 
 export const metadata: Metadata = {
@@ -19,6 +20,8 @@ export default async function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <PurchasePoller hasPending={pending.length > 0} />
+
       <div>
         <h1 className="text-2xl font-semibold tracking-tight lowercase">
           your domains
