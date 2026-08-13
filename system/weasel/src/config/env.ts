@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 const EnvSchema = z.object({
+  INTERNAL_TOKEN: z.string().min(1),
   WEASEL_DATABASE_URL: z.string().min(1),
   WEASEL_PORT: z.coerce.number().int().positive().default(8781),
 });

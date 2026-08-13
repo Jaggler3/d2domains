@@ -7,7 +7,10 @@ import { HttpError } from "../lib/http";
 import { loadEnv } from "../config/env";
 
 const env = loadEnv();
-const registry = createRegistryClient({ baseUrl: env.REGISTRY_URL });
+const registry = createRegistryClient({
+  baseUrl: env.REGISTRY_URL,
+  internalToken: env.INTERNAL_TOKEN,
+});
 
 export const RECORD_TYPES = ["A", "AAAA", "CNAME", "MX", "TXT", "NS", "SRV", "CAA"] as const;
 

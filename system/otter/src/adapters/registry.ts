@@ -10,7 +10,7 @@ export interface RegistryDnsRecord {
   priority: number | null;
 }
 
-export function createRegistryClient(config: { baseUrl: string }) {
+export function createRegistryClient(config: { baseUrl: string; internalToken: string }) {
   async function req<T>(
     path: string,
     init: { method?: string; body?: unknown } = {},
@@ -19,7 +19,10 @@ export function createRegistryClient(config: { baseUrl: string }) {
     try {
       res = await fetch(`${config.baseUrl}${path}`, {
         method: init.method ?? "GET",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-internal-token": config.internalToken,
+        },
         body: init.body === undefined ? undefined : JSON.stringify(init.body),
       });
     } catch {

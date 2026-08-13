@@ -15,7 +15,7 @@ try {
   console.error("[otter] redis unavailable, dns-sync degraded:", err);
 }
 
-const app = createApp();
+const app = createApp(env.INTERNAL_TOKEN);
 const server = Bun.serve({
   port: env.OTTER_PORT,
   fetch: app.fetch,

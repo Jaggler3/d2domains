@@ -1,4 +1,5 @@
 import { HttpError } from "../lib/http";
+import { getRequestId } from "../lib/request-id";
 
 export interface DnsZone {
   id: string;
@@ -23,7 +24,7 @@ export interface DnsRecord {
   updatedAt: string;
 }
 
-export function createOtterClient(config: { baseUrl: string }) {
+export function createOtterClient(config: { baseUrl: string; internalToken: string }) {
   async function req<T>(
     path: string,
     init: { method?: string; body?: unknown } = {},
@@ -32,7 +33,11 @@ export function createOtterClient(config: { baseUrl: string }) {
     try {
       res = await fetch(`${config.baseUrl}${path}`, {
         method: init.method ?? "GET",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-internal-token": config.internalToken,
+          ...(getRequestId() ? { "x-request-id": getRequestId() } : {}),
+        },
         body: init.body === undefined ? undefined : JSON.stringify(init.body),
       });
     } catch {

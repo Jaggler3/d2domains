@@ -2,7 +2,7 @@ import { createWeaselClient } from "../adapters/weasel";
 import { HttpError } from "../lib/http";
 import { loadEnv } from "../config/env";
 
-const weasel = createWeaselClient({ baseUrl: loadEnv().WEASEL_URL });
+const weasel = createWeaselClient({ baseUrl: loadEnv().WEASEL_URL, internalToken: loadEnv().INTERNAL_TOKEN });
 
 export async function assertDomainOwnership(
   userId: string,

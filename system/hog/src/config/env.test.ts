@@ -3,6 +3,7 @@ import { loadEnv } from "./env";
 
 const BASE = {
   DATABASE_URL: "postgresql://localhost:5432/d2gres",
+  INTERNAL_TOKEN: "test-token",
 };
 
 describe("loadEnv", () => {

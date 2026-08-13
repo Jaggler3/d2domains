@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 const EnvSchema = z.object({
+  INTERNAL_TOKEN: z.string().min(1),
   DATABASE_URL: z.string().min(1),
   REDIS_URL: z.string().default("redis://localhost:6379"),
   REGISTRY_URL: z.string().url().default("http://localhost:8783"),

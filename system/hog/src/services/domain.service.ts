@@ -5,7 +5,7 @@ import { loadEnv } from "../config/env";
 
 const env = loadEnv();
 
-const registry = createRegistryClient({ baseUrl: env.REGISTRY_URL });
+const registry = createRegistryClient({ baseUrl: env.REGISTRY_URL, internalToken: env.INTERNAL_TOKEN });
 
 export interface DomainSearchInput {
   keyword: string;

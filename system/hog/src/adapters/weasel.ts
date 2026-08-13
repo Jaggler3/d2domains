@@ -1,4 +1,5 @@
 import { HttpError } from "../lib/http";
+import { getRequestId } from "../lib/request-id";
 
 export interface Order {
   id: string;
@@ -26,7 +27,7 @@ export interface DomainRow {
   orderId: string;
 }
 
-export function createWeaselClient(config: { baseUrl: string }) {
+export function createWeaselClient(config: { baseUrl: string; internalToken: string }) {
   async function req<T>(
     path: string,
     init?: { method?: string; body?: unknown },
@@ -35,7 +36,11 @@ export function createWeaselClient(config: { baseUrl: string }) {
     try {
       res = await fetch(`${config.baseUrl}${path}`, {
         method: init?.method ?? "GET",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-internal-token": config.internalToken,
+          ...(getRequestId() ? { "x-request-id": getRequestId() } : {}),
+        },
         body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
       });
     } catch {

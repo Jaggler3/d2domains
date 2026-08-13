@@ -13,7 +13,7 @@ try {
   console.error("[heron] redis unavailable, rate limiting disabled:", err);
 }
 
-const app = createApp(redis);
+const app = createApp(redis, env.INTERNAL_TOKEN);
 
 const server = Bun.serve({
   port: env.HERON_PORT,

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 const EnvSchema = z.object({
+  INTERNAL_TOKEN: z.string().min(1),
   NAME_COM_USERNAME: z.string().min(1),
   NAME_COM_TOKEN: z.string().min(1),
   NAME_COM_BASE: z.string().url().default("https://api.dev.name.com"),

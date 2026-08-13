@@ -6,8 +6,8 @@ import { loadEnv } from "../config/env";
 
 const env = loadEnv();
 
-const registry = createRegistryClient({ baseUrl: env.REGISTRY_URL });
-const weasel = createWeaselClient({ baseUrl: env.WEASEL_URL });
+const registry = createRegistryClient({ baseUrl: env.REGISTRY_URL, internalToken: env.INTERNAL_TOKEN });
+const weasel = createWeaselClient({ baseUrl: env.WEASEL_URL, internalToken: env.INTERNAL_TOKEN });
 
 export async function clearSearchCache(): Promise<void> {
   let cursor = "0";

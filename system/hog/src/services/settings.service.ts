@@ -2,7 +2,7 @@ import { createRegistryClient, type RegistryDomainSettings } from "../adapters/r
 import { assertDomainOwnership } from "./ownership";
 import { loadEnv } from "../config/env";
 
-const registry = createRegistryClient({ baseUrl: loadEnv().REGISTRY_URL });
+const registry = createRegistryClient({ baseUrl: loadEnv().REGISTRY_URL, internalToken: loadEnv().INTERNAL_TOKEN });
 
 export interface SettingsPatch {
   autorenew?: boolean;

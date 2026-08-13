@@ -4,7 +4,7 @@ import { loadEnv } from "../config/env";
 
 const env = loadEnv();
 
-const otter = createOtterClient({ baseUrl: env.OTTER_URL });
+const otter = createOtterClient({ baseUrl: env.OTTER_URL, internalToken: env.INTERNAL_TOKEN });
 
 export const dnsService = {
   async listRecords(userId: string, domainName: string): Promise<{ zone: DnsZone; records: DnsRecord[] }> {

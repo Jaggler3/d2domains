@@ -7,7 +7,7 @@ const env = loadEnv();
 
 await migrate(db, { migrationsFolder: "./drizzle" });
 
-const app = createApp();
+const app = createApp(env.INTERNAL_TOKEN);
 
 const server = Bun.serve({
   port: env.WEASEL_PORT,

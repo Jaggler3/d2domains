@@ -88,11 +88,11 @@ Durable production data = **Postgres** (one instance, one DB per service). **sql
 ## Direction / roadmap
 
 Completed: login, public search, buy flow, dashboard, DNS management (otter + sync to name.com via heron, domain detail page), registrar settings (autorenew, whois privacy, transfer lock, nameservers).
+Hardening (done): internal-auth token (`x-internal-token`, `INTERNAL_TOKEN` env) enforced on heron/weasel/wombat/otter and sent by hog/badger/otter; worker saga tests (badger purchase, otter dns-sync via `createSyncProcessor`); request-id propagation (`x-request-id` through hog→weasel/otter/heron) + structured JSON request logs + hog `/metrics` (Prometheus text); DNS-sync idempotency (reconcile-adopt on duplicate create).
 Up next (agreed order):
-- **Hardening** (next): shared internal-auth token between services, tests for the purchase/DNS worker sagas, observability (logs/metrics/traces), DNS-sync idempotency (crash between registry create and storing id can duplicate records).
-- **Deploy** is intentionally deferred for now (managed Postgres, hosts, CI, TLS) — everything runs locally/compose.
 - **Billing depth**: wombat is a fake always-succeeds payment; real provider + ledger depth later.
 - **Client polish**: order history page (orders exist in the API), whois info on the detail page, rate-limit DNS/settings endpoints, per-domain search-cache invalidation.
+- **Deploy** is intentionally deferred (managed Postgres, hosts, CI, TLS) — everything runs locally/compose.
 - **Future service extractions** on trigger (don't pre-build): notifications (nightingale), identity (meerkat), events (kestrel), etc.
 Long-term product goals: sell/include **email services** and **hosting services** alongside domains.
 
