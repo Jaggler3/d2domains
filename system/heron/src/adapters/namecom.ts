@@ -29,6 +29,22 @@ export interface NewDnsRecord {
   priority?: number | null;
 }
 
+export interface RegistryContact {
+  firstName?: string;
+  lastName?: string;
+  organization?: string;
+  email?: string;
+  phone?: string;
+  country?: string;
+}
+
+export interface RegistryDomainContacts {
+  registrant?: RegistryContact;
+  admin?: RegistryContact;
+  tech?: RegistryContact;
+  billing?: RegistryContact;
+}
+
 export interface RegistryDomain {
   domainName: string;
   nameservers: string[];
@@ -38,6 +54,7 @@ export interface RegistryDomain {
   expireDate: string;
   createDate: string;
   renewalPrice: number;
+  contacts?: RegistryDomainContacts;
 }
 
 export interface RegistryDomainPricing {

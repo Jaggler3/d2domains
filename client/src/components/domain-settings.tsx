@@ -15,7 +15,18 @@ interface DomainSettings {
   locked: boolean;
   autorenewEnabled: boolean;
   expireDate: string;
+  createDate: string;
   renewalPrice: number;
+  contacts?: {
+    registrant?: {
+      firstName?: string;
+      lastName?: string;
+      organization?: string;
+      email?: string;
+      phone?: string;
+      country?: string;
+    };
+  };
 }
 
 function Toggle({
@@ -169,6 +180,31 @@ export function DomainSettings({ domainName }: { domainName: string }) {
             <Save /> save
           </Button>
         </div>
+
+        {settings.contacts?.registrant && (
+          <div className="mt-3 rounded-lg border border-border/60 bg-muted/30 px-3 py-3 text-xs">
+            <p className="font-medium lowercase text-muted-foreground">whois · registrant</p>
+            <p className="mt-1">
+              {[
+                settings.contacts.registrant.firstName,
+                settings.contacts.registrant.lastName,
+              ]
+                .filter(Boolean)
+                .join(" ") || "—"}
+              {settings.contacts.registrant.email
+                ? ` · ${settings.contacts.registrant.email}`
+                : ""}
+            </p>
+            <p className="text-muted-foreground">
+              registered{" "}
+              {new Date(settings.createDate).toLocaleDateString("en-US", {
+                year: "numeric",
+                month: "short",
+                day: "numeric",
+              })}
+            </p>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

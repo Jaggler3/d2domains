@@ -12,6 +12,15 @@ export interface DomainSearchResult {
   renewalPrice: number | null;
 }
 
+export interface RegistryContact {
+  firstName?: string;
+  lastName?: string;
+  organization?: string;
+  email?: string;
+  phone?: string;
+  country?: string;
+}
+
 export interface RegistryDomainSettings {
   domainName: string;
   nameservers: string[];
@@ -21,6 +30,12 @@ export interface RegistryDomainSettings {
   expireDate: string;
   createDate: string;
   renewalPrice: number;
+  contacts?: {
+    registrant?: RegistryContact;
+    admin?: RegistryContact;
+    tech?: RegistryContact;
+    billing?: RegistryContact;
+  };
 }
 
 export function createRegistryClient(config: { baseUrl: string; internalToken: string }) {

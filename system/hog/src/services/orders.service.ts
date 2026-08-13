@@ -9,19 +9,23 @@ const env = loadEnv();
 const registry = createRegistryClient({ baseUrl: env.REGISTRY_URL, internalToken: env.INTERNAL_TOKEN });
 const weasel = createWeaselClient({ baseUrl: env.WEASEL_URL, internalToken: env.INTERNAL_TOKEN });
 
-export async function clearSearchCache(): Promise<void> {
-  let cursor = "0";
-  do {
-    const [next, keys] = await redis.scan(
-      cursor,
-      "MATCH",
-      "domain:search:*",
-      "COUNT",
-      100,
-    );
-    cursor = next;
-    if (keys.length > 0) await redis.del(...keys);
-  } while (cursor !== "0");
+export async function clearSearchCacheForDomain(domainName: string): Promise<void> {
+  const sld = domainName.split(".")[0];
+  if (!sld) return;
+  for (const pattern of [`domain:search:${sld}:*`, `domain:search:${domainName}:*`]) {
+    let cursor = "0";
+    do {
+      const [next, keys] = await redis.scan(
+        cursor,
+        "MATCH",
+        pattern,
+        "COUNT",
+        100,
+      );
+      cursor = next;
+      if (keys.length > 0) await redis.del(...keys);
+    } while (cursor !== "0");
+  }
 }
 
 export interface BuyInput {
@@ -65,7 +69,7 @@ export async function buyDomain(userId: string, input: BuyInput): Promise<Order>
   }
 
   await enqueuePurchase(order.id);
-  await clearSearchCache();
+  await clearSearchCacheForDomain(domainName);
   return order;
 }
 

@@ -120,6 +120,17 @@ function domainShape(row: {
   nameservers: string | null;
 }) {
   const price = Number(row.price);
+  const contact = (kind: string) => ({
+    firstName: "Jane",
+    lastName: "Doe",
+    organization: `${kind} Contact`,
+    address1: "123 Main St.",
+    city: "Denver",
+    state: "CO",
+    country: "US",
+    phone: "+1.3035551212",
+    email: `admin@${row.domain_name}`,
+  });
   return {
     domainName: row.domain_name,
     nameservers: row.nameservers
@@ -131,6 +142,12 @@ function domainShape(row: {
     expireDate: new Date(Date.now() + 365 * 86400_000).toISOString(),
     createDate: row.reserved_at ?? new Date().toISOString(),
     renewalPrice: price,
+    contacts: {
+      registrant: contact("Registrant"),
+      admin: contact("Admin"),
+      tech: contact("Tech"),
+      billing: contact("Billing"),
+    },
   };
 }
 
