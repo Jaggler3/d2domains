@@ -13,7 +13,14 @@ export function createRegistryRouter(redis: Redis) {
   router.get("/dns/:domainName/records", (c) => controller.listDnsRecords(c));
   router.post("/dns/:domainName/records", (c) => controller.createDnsRecord(c));
   router.put("/dns/:domainName/records/:recordId", (c) => controller.updateDnsRecord(c));
-  router.delete("/dns/:domainName/records/:recordId", (c) => controller.deleteDnsRecord(c));;
+  router.delete("/dns/:domainName/records/:recordId", (c) => controller.deleteDnsRecord(c));
+
+  router.get("/domains/:domainName", (c) => controller.getDomain(c));
+  router.get("/domains/:domainName/pricing", (c) => controller.getPricing(c));
+  router.post("/domains/:domainName/autorenew", (c) => controller.setAutorenew(c));
+  router.post("/domains/:domainName/privacy", (c) => controller.setPrivacy(c));
+  router.post("/domains/:domainName/nameservers", (c) => controller.setNameservers(c));
+  router.post("/domains/:domainName/lock", (c) => controller.setLock(c));;
 
   return router;
 }

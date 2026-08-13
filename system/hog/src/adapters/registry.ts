@@ -11,17 +11,28 @@ export interface DomainSearchResult {
   renewalPrice: number | null;
 }
 
+export interface RegistryDomainSettings {
+  domainName: string;
+  nameservers: string[];
+  privacyEnabled: boolean;
+  locked: boolean;
+  autorenewEnabled: boolean;
+  expireDate: string;
+  createDate: string;
+  renewalPrice: number;
+}
+
 export function createRegistryClient(config: { baseUrl: string }) {
-  async function post<T>(
+  async function req<T>(
     path: string,
-    body: unknown,
+    init: { method?: string; body?: unknown } = {},
   ): Promise<T> {
     let res: Response;
     try {
       res = await fetch(`${config.baseUrl}${path}`, {
-        method: "POST",
+        method: init.method ?? "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: init.body === undefined ? undefined : JSON.stringify(init.body),
       });
     } catch {
       throw new HttpError("registry service unavailable", 503);
@@ -40,15 +51,43 @@ export function createRegistryClient(config: { baseUrl: string }) {
 
   return {
     search(keyword: string, tldFilter?: string[]) {
-      return post<{ results: DomainSearchResult[] }>("/v1/search", {
-        keyword,
-        tldFilter,
+      return req<{ results: DomainSearchResult[] }>("/v1/search", {
+        body: { keyword, tldFilter },
       });
     },
     checkAvailability(domainNames: string[]) {
-      return post<{ results: DomainSearchResult[] }>(
-        "/v1/check-availability",
-        { domainNames },
+      return req<{ results: DomainSearchResult[] }>("/v1/check-availability", {
+        body: { domainNames },
+      });
+    },
+    getDomainSettings(domainName: string) {
+      return req<{ domain: RegistryDomainSettings }>(
+        `/v1/domains/${encodeURIComponent(domainName)}`,
+        { method: "GET" },
+      );
+    },
+    setAutorenew(domainName: string, enabled: boolean) {
+      return req<{ domain: RegistryDomainSettings }>(
+        `/v1/domains/${encodeURIComponent(domainName)}/autorenew`,
+        { body: { enabled } },
+      );
+    },
+    setPrivacy(domainName: string, enabled: boolean) {
+      return req<{ domain: RegistryDomainSettings }>(
+        `/v1/domains/${encodeURIComponent(domainName)}/privacy`,
+        { body: { enabled } },
+      );
+    },
+    setNameservers(domainName: string, nameservers: string[]) {
+      return req<{ domain: RegistryDomainSettings }>(
+        `/v1/domains/${encodeURIComponent(domainName)}/nameservers`,
+        { body: { nameservers } },
+      );
+    },
+    setLock(domainName: string, locked: boolean) {
+      return req<{ domain: RegistryDomainSettings }>(
+        `/v1/domains/${encodeURIComponent(domainName)}/lock`,
+        { body: { enabled: locked } },
       );
     },
   };

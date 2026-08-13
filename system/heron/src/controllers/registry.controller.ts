@@ -38,6 +38,14 @@ const dnsRecordSchema = z.object({
   priority: z.number().int().min(0).max(65535).nullable().optional(),
 });
 
+const toggleSchema = z.object({
+  enabled: z.boolean(),
+});
+
+const nameserversSchema = z.object({
+  nameservers: z.array(z.string().min(1).max(253)).min(1).max(13),
+});
+
 export class HeronError extends Error {
   constructor(
     message: string,
@@ -141,5 +149,53 @@ export function createRegistryController(redis: Redis) {
     return c.body(null, 204);
   }
 
-  return { search, checkAvailability, register, listDnsRecords, createDnsRecord, updateDnsRecord, deleteDnsRecord };
+  async function getDomain(c: Context) {
+    await gate(c);
+    const domain = await registry.getDomain(domainNameOf(c));
+    return c.json({ domain });
+  }
+
+  async function getPricing(c: Context) {
+    await gate(c);
+    const pricing = await registry.getPricing(domainNameOf(c));
+    return c.json({ pricing });
+  }
+
+  async function setAutorenew(c: Context) {
+    await gate(c);
+    const body = await c.req.json().catch(() => null);
+    const parsed = toggleSchema.safeParse(body);
+    if (!parsed.success) throw new HeronError("invalid toggle", 422);
+    const domain = await registry.setAutorenew(domainNameOf(c), parsed.data.enabled);
+    return c.json({ domain });
+  }
+
+  async function setPrivacy(c: Context) {
+    await gate(c);
+    const body = await c.req.json().catch(() => null);
+    const parsed = toggleSchema.safeParse(body);
+    if (!parsed.success) throw new HeronError("invalid toggle", 422);
+    const domain = await registry.setPrivacy(domainNameOf(c), parsed.data.enabled);
+    return c.json({ domain });
+  }
+
+  async function setNameservers(c: Context) {
+    await gate(c);
+    const body = await c.req.json().catch(() => null);
+    const parsed = nameserversSchema.safeParse(body);
+    if (!parsed.success) throw new HeronError("invalid nameservers", 422);
+    const domain = await registry.setNameservers(domainNameOf(c), parsed.data.nameservers);
+    return c.json({ domain });
+  }
+
+  async function setLock(c: Context) {
+    await gate(c);
+    const body = await c.req.json().catch(() => null);
+    const parsed = toggleSchema.safeParse(body);
+    if (!parsed.success) throw new HeronError("invalid toggle", 422);
+    const domain = await registry.setLock(domainNameOf(c), parsed.data.enabled);
+    return c.json({ domain });
+  }
+
+  return { search, checkAvailability, register, listDnsRecords, createDnsRecord, updateDnsRecord, deleteDnsRecord, getDomain, getPricing, setAutorenew, setPrivacy, setNameservers, setLock };
 }

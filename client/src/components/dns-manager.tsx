@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
-import { ArrowLeft, Loader2, Plus, Trash2 } from "lucide-react";
+import { Loader2, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -144,33 +143,14 @@ export function DnsManager({ domainName }: { domainName: string }) {
 
   if (notFound) {
     return (
-      <div className="flex flex-col gap-4">
-        <Button render={<Link href="/account" />} variant="ghost" size="sm">
-          <ArrowLeft /> back to dashboard
-        </Button>
-        <p className="text-sm text-muted-foreground">
-          you don&apos;t own {domainName}, or it doesn&apos;t exist.
-        </p>
-      </div>
+      <p className="text-sm text-muted-foreground">
+        you don&apos;t own {domainName}, or it doesn&apos;t exist.
+      </p>
     );
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center gap-3">
-        <Button render={<Link href="/account" />} variant="ghost" size="sm">
-          <ArrowLeft />
-        </Button>
-        <div>
-          <h1 className="font-mono text-2xl font-semibold tracking-tight">
-            {domainName}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            dns records sync to name.com as you edit.
-          </p>
-        </div>
-      </div>
-
+    <div className="flex flex-col gap-4">
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       <Card>

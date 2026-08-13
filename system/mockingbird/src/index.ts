@@ -51,6 +51,12 @@ const SEED_TAKEN = [
   "openai.com",
 ];
 
+for (const col of ["autorenew", "privacy", "locked", "nameservers"]) {
+  try {
+    db.exec(`ALTER TABLE domains ADD COLUMN ${col} TEXT`);
+  } catch {}
+}
+
 const insert = db.prepare(
   "INSERT OR IGNORE INTO domains (domain_name, available, price) VALUES (?, 0, 0)",
 );
@@ -101,6 +107,35 @@ const deleteRecord = db.prepare(
 );
 
 const DOMAIN_RECORDS_RE = /^\/v4\/domains\/([^/]+)\/records(?:\/([^/]+))?$/;
+const DOMAIN_ACTION_RE = /^\/v4\/domains\/([^/]+):(\w+)$/;
+
+function domainShape(row: {
+  domain_name: string;
+  price: number;
+  reserved_at: string | null;
+  autorenew: string | null;
+  privacy: string | null;
+  locked: string | null;
+  nameservers: string | null;
+}) {
+  const price = Number(row.price);
+  return {
+    domainName: row.domain_name,
+    nameservers: row.nameservers
+      ? (JSON.parse(row.nameservers) as string[])
+      : ["ns1.name.com", "ns2.name.com"],
+    privacyEnabled: row.privacy === "1",
+    locked: row.locked === null ? true : row.locked === "1",
+    autorenewEnabled: row.autorenew === null ? true : row.autorenew === "1",
+    expireDate: new Date(Date.now() + 365 * 86400_000).toISOString(),
+    createDate: row.reserved_at ?? new Date().toISOString(),
+    renewalPrice: price,
+  };
+}
+
+const findDomainRow = db.prepare(
+  "SELECT * FROM domains WHERE domain_name = ?",
+);
 
 function authorized(request: Request): boolean {
   const header = request.headers.get("authorization") ?? "";
@@ -141,7 +176,9 @@ const server = Bun.serve({
       url.pathname === "/v4/domains:search" ||
       url.pathname === "/v4/domains:checkAvailability" ||
       url.pathname === "/v4/domains" ||
-      DOMAIN_RECORDS_RE.test(url.pathname);
+      DOMAIN_RECORDS_RE.test(url.pathname) ||
+      DOMAIN_ACTION_RE.test(url.pathname) ||
+      /^\/v4\/domains\/[^/]+$/.test(url.pathname);
     if (!isRegistryCall) {
       return Response.json({ message: "Not Found" }, { status: 404 });
     }
@@ -189,8 +226,8 @@ const server = Bun.serve({
         const tld = dot > 0 ? domainName.slice(dot + 1) : "";
         const price = Number(body.purchasePrice ?? (hashState(sld, tld) === "premium" ? 100 : 12.99));
         db.prepare(
-          "INSERT INTO domains (domain_name, available, price, reserved_at) VALUES (?, 0, ?, ?)",
-        ).run(domainName, price, new Date().toISOString());
+          "INSERT INTO domains (domain_name, available, price, reserved_at, autorenew, privacy, locked, nameservers) VALUES (?, 0, ?, ?, '1', '0', '1', ?)",
+        ).run(domainName, price, new Date().toISOString(), JSON.stringify(["ns1.name.com", "ns2.name.com"]));
         insertRecord.run(
           crypto.randomUUID(),
           domainName,
@@ -277,6 +314,76 @@ const server = Bun.serve({
             return new Response(null, { status: 204 });
           }
         }
+      }
+
+      const actionMatch = DOMAIN_ACTION_RE.exec(url.pathname);
+      if (actionMatch) {
+        const domain = actionMatch[1]!.toLowerCase();
+        const action = actionMatch[2]!;
+        if (!isTaken(domain)) {
+          return Response.json({ message: "domain not found" }, { status: 404 });
+        }
+        const row = findDomainRow.get(domain) as {
+          domain_name: string; price: number; reserved_at: string | null;
+          autorenew: string | null; privacy: string | null; locked: string | null; nameservers: string | null;
+        };
+
+        if (action === "getPricing") {
+          const price = Number(row.price);
+          return Response.json({
+            purchasePrice: price,
+            renewalPrice: price,
+            transferPrice: price,
+            premium: price > 100,
+          });
+        }
+
+        const set = (col: string, val: string) => {
+          db.prepare(`UPDATE domains SET ${col} = ? WHERE domain_name = ?`).run(val, domain);
+        };
+        const respond = () => Response.json({ domain: domainShape(row) });
+
+        switch (action) {
+          case "enableAutorenew":
+            set("autorenew", "1");
+            return respond();
+          case "disableAutorenew":
+            set("autorenew", "0");
+            return respond();
+          case "enableWhoisPrivacy":
+            set("privacy", "1");
+            return respond();
+          case "disableWhoisPrivacy":
+            set("privacy", "0");
+            return respond();
+          case "lockDomain":
+            set("locked", "1");
+            return respond();
+          case "unlockDomain":
+            set("locked", "0");
+            return respond();
+          case "setNameservers": {
+            const body = await readJson(request);
+            const nameservers = Array.isArray(body.nameservers)
+              ? (body.nameservers as string[])
+              : [];
+            if (nameservers.length === 0) {
+              return Response.json({ message: "nameservers are required" }, { status: 400 });
+            }
+            set("nameservers", JSON.stringify(nameservers));
+            return respond();
+          }
+          default:
+            return Response.json({ message: "Not Found" }, { status: 404 });
+        }
+      }
+
+      const domainInfo = /^\/v4\/domains\/([^/]+)$/.exec(url.pathname);
+      if (domainInfo && request.method === "GET") {
+        const domain = domainInfo[1]!.toLowerCase();
+        const row = findDomainRow.get(domain);
+        if (!row) return Response.json({ message: "domain not found" }, { status: 404 });
+        return Response.json(domainShape(row as Parameters<typeof domainShape>[0]));
       }
     } catch (err) {
       if (err instanceof Response) return err;

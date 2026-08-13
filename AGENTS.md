@@ -58,7 +58,8 @@ Durable production data = **Postgres** (one instance, one DB per service). **sql
 - **Search**: public. client → hog `POST /api/v1/domains/search` → Redis cache (key `domain:search:{keyword}:{tlds}`) → heron `/v1/search` → name.com. Results normalized to a stable DTO: `purchasable`, `premium`, `purchasePrice`/`renewalPrice` (null when unavailable), `purchaseType`. name.com omits fields for unavailable domains; normalize so the client contract is stable. **Search cache is cleared on buy** (`clearSearchCache`).
 - **Buy**: `POST /api/v1/domains/buy` (auth) → `checkAvailability` for authoritative price/type (never trust client price) → order in weasel (idempotency key `user:domain`, pending) → enqueue `purchases` → `202 {order}`. badger: charge wombat → register at heron `/v1/register` (purchasePrice + purchaseType; 409/400 = terminal → order failed, transient = BullMQ backoff) → create domain in weasel (expiresAt = now + years) → mark order purchased.
 - **Dashboard**: `/account` (server component) renders domains + pending/failed orders from `getMyDomains()`/`getMyOrders()`.
-- **DNS (current build)**: `/account/[domainName]` detail page → hog `GET/POST/PATCH/DELETE /api/v1/domains/:name/dns` (ownership checked via weasel) → otter (source of truth, Postgres) → local write + enqueue `dns-sync` job → otter in-process worker → heron `/v1/dns/:domain/records` → name.com. Records have `syncStatus` pending|synced|error and `registryRecordId`. First view pulls/imports existing name.com records.
+- **DNS**: `/account/[domainName]` detail page → hog `GET/POST/PATCH/DELETE /api/v1/domains/:name/dns` (ownership checked via weasel) → otter (source of truth, Postgres) → local write + enqueue `dns-sync` job → otter in-process worker → heron `/v1/dns/:domain/records` → name.com. Records have `syncStatus` pending|synced|error and `registryRecordId`. First view pulls/imports existing name.com records.
+- **Registrar settings**: `/api/v1/domains/:name/settings` GET/PATCH (ownership checked via weasel) → heron `/v1/domains/:name` + toggle/setNameservers endpoints → name.com (autorenew, whois privacy, transfer lock, nameservers). hog maps settings patch fields to heron `{enabled}`/`{nameservers}` payloads.
 - **Queues**: BullMQ + Redis. `domains-jobs` (beaver), `purchases` (badger), `dns-sync` (otter). Queues are for async writes only — sync request-path reads use cache + rate limiting, never queues.
 
 ## Docker compose
@@ -86,12 +87,14 @@ Durable production data = **Postgres** (one instance, one DB per service). **sql
 
 ## Direction / roadmap
 
-Completed: login, public search, buy flow, dashboard, DNS management (otter + sync to name.com via heron, domain detail page).
-Future:
-- Registrar settings on the domain page (autorenew, whois privacy, nameservers, lock) via name.com API through heron
-- Hardening: shared internal-auth token between services, tests for the purchase/DNS worker sagas, observability (logs/metrics/traces)
-- Deploy prep: managed Postgres, hosts, CI
-- Later service extraction when triggers hit: notifications (nightingale), identity (meerkat), events (kestrel), etc. — build on trigger, don't pre-build.
+Completed: login, public search, buy flow, dashboard, DNS management (otter + sync to name.com via heron, domain detail page), registrar settings (autorenew, whois privacy, transfer lock, nameservers).
+Up next (agreed order):
+- **Hardening** (next): shared internal-auth token between services, tests for the purchase/DNS worker sagas, observability (logs/metrics/traces), DNS-sync idempotency (crash between registry create and storing id can duplicate records).
+- **Deploy** is intentionally deferred for now (managed Postgres, hosts, CI, TLS) — everything runs locally/compose.
+- **Billing depth**: wombat is a fake always-succeeds payment; real provider + ledger depth later.
+- **Client polish**: order history page (orders exist in the API), whois info on the detail page, rate-limit DNS/settings endpoints, per-domain search-cache invalidation.
+- **Future service extractions** on trigger (don't pre-build): notifications (nightingale), identity (meerkat), events (kestrel), etc.
+Long-term product goals: sell/include **email services** and **hosting services** alongside domains.
 
 ## Gotchas / history
 

@@ -29,6 +29,24 @@ export interface NewDnsRecord {
   priority?: number | null;
 }
 
+export interface RegistryDomain {
+  domainName: string;
+  nameservers: string[];
+  privacyEnabled: boolean;
+  locked: boolean;
+  autorenewEnabled: boolean;
+  expireDate: string;
+  createDate: string;
+  renewalPrice: number;
+}
+
+export interface RegistryDomainPricing {
+  purchasePrice: number;
+  renewalPrice: number;
+  transferPrice: number;
+  premium: boolean;
+}
+
 export interface RegistryConfig {
   baseUrl: string;
   username: string;
@@ -178,6 +196,42 @@ export function createRegistryClient(config: RegistryConfig) {
       return request<undefined>(
         `/v4/domains/${encodeURIComponent(domainName)}/records/${recordId}`,
         { method: "DELETE" },
+      );
+    },
+    getDomain(domainName: string) {
+      return request<RegistryDomain>(
+        `/v4/domains/${encodeURIComponent(domainName)}`,
+        { method: "GET" },
+      );
+    },
+    getPricing(domainName: string) {
+      return request<RegistryDomainPricing>(
+        `/v4/domains/${encodeURIComponent(domainName)}:getPricing`,
+        { method: "GET" },
+      );
+    },
+    setAutorenew(domainName: string, enabled: boolean) {
+      return request<RegistryDomain>(
+        `/v4/domains/${encodeURIComponent(domainName)}:${enabled ? "enable" : "disable"}Autorenew`,
+        { method: "POST" },
+      );
+    },
+    setPrivacy(domainName: string, enabled: boolean) {
+      return request<RegistryDomain>(
+        `/v4/domains/${encodeURIComponent(domainName)}:${enabled ? "enable" : "disable"}WhoisPrivacy`,
+        { method: "POST" },
+      );
+    },
+    setNameservers(domainName: string, nameservers: string[]) {
+      return request<RegistryDomain>(
+        `/v4/domains/${encodeURIComponent(domainName)}:setNameservers`,
+        { method: "POST", body: { nameservers } },
+      );
+    },
+    setLock(domainName: string, locked: boolean) {
+      return request<RegistryDomain>(
+        `/v4/domains/${encodeURIComponent(domainName)}:${locked ? "lock" : "unlock"}Domain`,
+        { method: "POST" },
       );
     },
   };

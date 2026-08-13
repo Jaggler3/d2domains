@@ -1,4 +1,8 @@
 import type { Metadata } from "next";
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { DomainSettings } from "@/components/domain-settings";
 import { DnsManager } from "@/components/dns-manager";
 
 export const metadata: Metadata = {
@@ -11,5 +15,26 @@ export default async function DomainDetailPage({
   params: Promise<{ domainName: string }>;
 }) {
   const { domainName } = await params;
-  return <DnsManager domainName={decodeURIComponent(domainName)} />;
+  const name = decodeURIComponent(domainName);
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="flex items-center gap-3">
+        <Button render={<Link href="/account" />} variant="ghost" size="sm">
+          <ArrowLeft />
+        </Button>
+        <div>
+          <h1 className="font-mono text-2xl font-semibold tracking-tight">
+            {name}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            registrar settings and dns records.
+          </p>
+        </div>
+      </div>
+
+      <DomainSettings domainName={name} />
+      <DnsManager domainName={name} />
+    </div>
+  );
 }
