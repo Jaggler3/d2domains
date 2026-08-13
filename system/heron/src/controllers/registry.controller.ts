@@ -118,7 +118,7 @@ export function createRegistryController(redis: Redis) {
   async function listDnsRecords(c: Context) {
     await gate(c);
     const res = await registry.listDnsRecords(domainNameOf(c));
-    return c.json({ records: res.records });
+    return c.json({ records: res.records ?? [] });
   }
 
   async function createDnsRecord(c: Context) {

@@ -45,7 +45,7 @@ async function ensurePulled(zone: Zone): Promise<void> {
   } catch (err) {
     console.error(`[otter] pull failed for ${zone.domainName}:`, err);
   }
-  for (const r of remote.records) {
+  for (const r of remote.records ?? []) {
     await db.insert(records).values({
       zoneId: zone.id,
       type: r.type,

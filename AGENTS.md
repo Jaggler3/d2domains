@@ -64,7 +64,7 @@ Durable production data = **Postgres** (one instance, one DB per service). **sql
 
 ## Docker compose
 
-- Default (`docker-compose.yml`) = dev against real name.com dev API. `docker compose up --watch` hot-reloads (compose sync + `bun --watch`).
+- Default (`docker-compose.yml`) = dev against real name.com dev API. `docker compose up --build --watch` hot-reloads (compose sync + `bun --watch`); use `--build` so newly-committed code is in the image, not just the stale one.
 - Mock: `docker compose -f docker-compose.yml -f docker-compose.mock.yml up --watch` — only heron's upstream changes (`NAME_COM_BASE: http://mockingbird:8890`), consumers still point at heron.
 - Prod: `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build` — non-watch commands, `restart: unless-stopped`, `COOKIE_SECURE: "true"`, prod creds from .env.
 - Postgres runs init scripts only on a **fresh** volume (`init/postgres/01-create-dbs.sql`). If a `d2d_pgdata` volume predates a new DB, `docker compose down -v` to re-init.
@@ -98,6 +98,7 @@ Long-term product goals: sell/include **email services** and **hosting services*
 
 ## Gotchas / history
 
+- `docker compose up --watch` runs whatever is in the image; if the image predates newly-committed code, containers serve stale routes/endpoints (symptom: 404s that work when you test the service directly). Rebuild with `docker compose up --build --watch`. `--build` only matters on `up`, not while watching — source edits hot-reload via sync + `bun --watch`, and `package.json` changes trigger a rebuild action.
 - name.com dev token was dead initially → mockingbird was built as a drop-in. Test buys against mockingbird; real-dev-API buys attempt real sandbox registrations.
 - Redis search cache served stale availability across registry-source switches → cache key later included the source, then became source-agnostic again once heron was the single entry point; buy clears the cache.
 - `attempts`/`backoff` are BullMQ **job** options (queue.add), not Worker options (v6).
