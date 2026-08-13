@@ -1,11 +1,21 @@
+import { redirect } from "next/navigation";
+import Link from "next/link";
 import { AccountNav } from "@/components/account-nav";
 import { Brand } from "@/components/brand";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import Link from "next/link";
+import { LogoutButton } from "@/components/logout-button";
+import { getCurrentUser } from "@/lib/session";
 
-export default function AccountLayout({ children }: LayoutProps<"/account">) {
+export default async function AccountLayout({
+  children,
+}: LayoutProps<"/account">) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+
+  const initial = user.email[0]?.toUpperCase() ?? "?";
+
   return (
     <div className="flex min-h-svh flex-1">
       <aside className="hidden w-56 shrink-0 flex-col border-r border-border/60 bg-sidebar md:flex">
@@ -19,17 +29,20 @@ export default function AccountLayout({ children }: LayoutProps<"/account">) {
           <div className="flex items-center gap-3 rounded-lg px-2 py-1.5">
             <Avatar className="size-7">
               <AvatarFallback className="bg-primary/15 text-xs text-primary">
-                d2
+                {initial}
               </AvatarFallback>
             </Avatar>
             <div className="min-w-0 flex-1">
               <p className="truncate text-xs font-medium lowercase">
-                d2domains user
+                {user.email.split("@")[0]}
               </p>
               <p className="truncate text-[11px] text-muted-foreground">
-                you@example.com
+                {user.email}
               </p>
             </div>
+          </div>
+          <div className="mt-2 px-2">
+            <LogoutButton className="w-full justify-start" />
           </div>
         </div>
       </aside>
@@ -44,7 +57,7 @@ export default function AccountLayout({ children }: LayoutProps<"/account">) {
             <div className="md:hidden">
               <Avatar className="size-7">
                 <AvatarFallback className="bg-primary/15 text-xs text-primary">
-                  d2
+                  {initial}
                 </AvatarFallback>
               </Avatar>
             </div>
