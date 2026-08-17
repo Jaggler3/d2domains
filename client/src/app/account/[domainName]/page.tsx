@@ -4,6 +4,7 @@ import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DomainSettings } from "@/components/domain-settings";
 import { DnsManager } from "@/components/dns-manager";
+import { EmailStarterCard } from "@/components/account/email-starter-card";
 
 export const metadata: Metadata = {
   title: "domain",
@@ -16,6 +17,14 @@ export default async function DomainDetailPage({
 }) {
   const { domainName } = await params;
   const name = decodeURIComponent(domainName);
+
+  const emailRes = await fetch(`${process.env.HOG_URL}/api/v1/domains/${encodeURIComponent(name)}/email`, {
+    next: { revalidate: 0 },
+  }).catch(() => null);
+  
+  const emailData = emailRes?.ok 
+    ? await emailRes.json() 
+    : null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -33,6 +42,7 @@ export default async function DomainDetailPage({
         </div>
       </div>
 
+      <EmailStarterCard domainName={name} emailData={emailData} />
       <DomainSettings domainName={name} />
       <DnsManager domainName={name} />
     </div>

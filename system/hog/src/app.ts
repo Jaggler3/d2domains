@@ -8,6 +8,7 @@ import { recordMetric, renderMetrics } from "./lib/metrics";
 import { authRouter } from "./web-routers/auth";
 import { domainsRouter, ordersRouter } from "./web-routers/domains";
 import { billingRouter } from "./web-routers/billing";
+import { emailRouter } from "./web-routers/email";
 import { loadEnv } from "./config/env";
 
 const env = loadEnv();
@@ -46,6 +47,7 @@ export function createApp() {
 
   app.route("/api/v1/auth", authRouter);
   app.route("/api/v1/domains", domainsRouter);
+  app.route("/api/v1/domains", emailRouter);
   app.route("/api/v1/orders", ordersRouter);
   app.route("/api/v1/billing", billingRouter);
 

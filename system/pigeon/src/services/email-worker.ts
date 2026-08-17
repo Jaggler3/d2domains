@@ -116,7 +116,22 @@ export function startEmailWorker(): Worker {
       if (typeof orderId !== "string" || orderId.length === 0) {
         throw new Error(`email job ${job.id ?? "?"} missing orderId`);
       }
-      await processProvisioningJob(orderId);
+      
+      // Call dove provisioning instead of internal processProvisioningJob
+      const doveUrl = env.DOVE_URL || "http://localhost:8786";
+      const res = await fetch(`${doveUrl}/internal/provision`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-internal-token": env.INTERNAL_TOKEN,
+        },
+        body: JSON.stringify({ orderId }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(`dove provisioning failed: ${data.error ?? res.statusText}`);
+      }
     },
     {
       connection: redis,

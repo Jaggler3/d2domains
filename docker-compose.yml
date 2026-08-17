@@ -202,11 +202,56 @@ services:
       REDIS_URL: redis://redis:6379
       WEASEL_URL: http://weasel:8781
       OTTER_URL: http://otter:8784
+      DOVE_URL: http://dove:8786
       PIGEON_PORT: 8785
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      dove:
+        condition: service_started
+
+  dove:
+    build:
+      context: ./system/dove
+    command: bun run --watch src/index.ts
+    env_file: ./.env
+    environment:
+      DOVE_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/d2dove
+      WEASEL_URL: http://weasel:8781
+      OTTER_URL: http://otter:8784
+      STALWART_URL: http://stalwart:8080
+      DOVE_PORT: 8786
+    ports:
+      - "8786:8786"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      stalwart:
+        condition: service_started
+
+  stalwart:
+    image: stalwartlabs/mail-server:latest
+    ports:
+      - "25:25"
+      - "587:587"
+      - "993:993"
+      - "143:143"
+      - "18080:8080"
+    volumes:
+      - stalwart_data:/opt/stalwart-mail
+    environment:
+      - STALWART_ADMIN_USER=${STALWART_ADMIN_USER}
+      - STALWART_ADMIN_PASSWORD=${STALWART_ADMIN_PASSWORD}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  redis:
+
         condition: service_healthy
     develop:
       watch:
@@ -249,3 +294,4 @@ services:
 
 volumes:
   pgdata:
+  stalwart_data:
