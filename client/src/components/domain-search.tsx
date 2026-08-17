@@ -6,7 +6,6 @@ import { Loader2, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { buyDomain } from "@/lib/buy-domain";
 import { measureCaretIn, type CaretAnchor } from "@/lib/caret";
 
 interface SearchResult {
@@ -90,16 +89,15 @@ export function DomainSearch({
   async function buy(domainName: string) {
     setBuying(domainName);
     try {
-      const result = await buyDomain(domainName);
-      if (result.unauthorized) {
+      const res = await fetch("/api/v1/auth/me");
+      if (!res.ok) {
         window.localStorage.setItem("pendingBuy", domainName);
         router.push("/login");
         return;
       }
-      if (!result.ok) throw new Error(result.error ?? "purchase failed");
-      router.push("/account");
+      router.push(`/checkout?domain=${encodeURIComponent(domainName)}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "purchase failed");
+      setError(err instanceof Error ? err.message : "couldn't start checkout");
     } finally {
       setBuying(null);
     }

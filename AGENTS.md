@@ -31,6 +31,7 @@ Every service is a folder under `system/<animal>/`, runs on Bun, HTTP via Hono, 
 | **beaver** | — | nothing (stateless worker) | sqlite `search_logs` | BullMQ `domains-jobs` consumer (search analytics) |
 | **mockingbird** | 8890 | fake name.com | sqlite | Implements name.com v4 API (search/checkAvailability/create/DNS) for mock compose |
 | **otter** | 8784 | DNS zones + records | Postgres `d2otter` | Source of truth for DNS; syncs to name.com via heron |
+| **pigeon** | — (worker-only) | email add-on provisioning | Postgres `d2pigeon` | BullMQ `email-jobs` consumer: mailbox + MX/SPF/DKIM/DMARC records for purchased orders; idempotent by orderId |
 
 ### Storage rule (important)
 Durable production data = **Postgres** (one instance, one DB per service). **sqlite only** for disposable/dev-only data (mockingbird, beaver). heron/badger are stateless. Do not add sqlite to a service whose data must survive in production.
@@ -48,19 +49,20 @@ Durable production data = **Postgres** (one instance, one DB per service). **sql
 ## Environment keys (top-level .env)
 
 - `NAME_COM_USERNAME`, `NAME_COM_TOKEN`, `NAME_COM_BASE` — used by heron/mockingbird. Dev = `https://api.dev.name.com`, prod = `https://api.name.com`. Note: the dev token is slow to become valid after creation.
-- `DATABASE_URL` (hog d2gres), `WEASEL_DATABASE_URL`, `WOMBAT_DATABASE_URL`, `OTTER_DATABASE_URL`
-- Service URLs default in code: `REGISTRY_URL=http://localhost:8783`, `WEASEL_URL=http://localhost:8781`, `WOMBAT_URL=http://localhost:8782`, `OTTER_URL=http://localhost:8784`, `HOG_URL=http://localhost:8787` (client)
+- `DATABASE_URL` (hog d2gres), `WEASEL_DATABASE_URL`, `WOMBAT_DATABASE_URL`, `OTTER_DATABASE_URL`, `PIGEON_DATABASE_URL`
+- Service URLs default in code: `REGISTRY_URL=http://localhost:8783`, `WEASEL_URL=http://localhost:8781`, `WOMBAT_URL=http://localhost:8782`, `OTTER_URL=http://localhost:8784`, `PIGEON_URL=http://localhost:8785`, `HOG_URL=http://localhost:8787` (client)
 - Rate limiting: heron `REGISTRY_RATE_BURST`/`REGISTRY_RATE_REFILL` (token bucket); hog `SEARCH_RATE_LIMIT_PER_MINUTE` (per-IP)
 
 ## Data flow / key behaviors
 
 - **Auth**: DB-backed opaque sessions, httpOnly cookie `hog_session`, argon2id via `Bun.password`. Cookie set by hog; client proxies so it stays first-party. Client server-side session helpers in `client/src/lib/session.ts` fetch hog directly with the cookie (`getCurrentUser`, `getMyDomains`, `getMyOrders`) wrapped in React `cache()`.
 - **Search**: public. client → hog `POST /api/v1/domains/search` → Redis cache (key `domain:search:{keyword}:{tlds}`) → heron `/v1/search` → name.com. Results normalized to a stable DTO: `purchasable`, `premium`, `purchasePrice`/`renewalPrice` (null when unavailable), `purchaseType`. name.com omits fields for unavailable domains; normalize so the client contract is stable. **Search cache is cleared on buy** (`clearSearchCache`).
-- **Buy**: `POST /api/v1/domains/buy` (auth) → `checkAvailability` for authoritative price/type (never trust client price) → order in weasel (idempotency key `user:domain`, pending) → enqueue `purchases` → `202 {order}`. badger: charge wombat → register at heron `/v1/register` (purchasePrice + purchaseType; 409/400 = terminal → order failed, transient = BullMQ backoff) → create domain in weasel (expiresAt = now + years) → mark order purchased.
+- **Buy**: `POST /api/v1/domains/buy` (auth) → `checkAvailability` for authoritative price/type (never trust client price) → order in weasel (idempotency key `user:domain`, pending; `priceCents` = registry amount, `totalCents` = domain + add-ons, `addons` jsonb line items, `paymentMethodId`) → enqueue `purchases` → `202 {order}`. badger: charge wombat `totalCents` + paymentMethodId → register at heron `/v1/register` (purchasePrice + purchaseType; 409/400 = terminal → order failed, transient = BullMQ backoff) → create domain in weasel (expiresAt = now + years) → mark order purchased. When the order has an email add-on, hog also enqueues `email-jobs` at buy time.
+- **Email provisioning**: pigeon (`email-jobs` consumer) fetches the order → waits until `purchased` (pending = retry, failed = never provision) → for each email add-on: record provisioning state in `d2pigeon` (keyed by orderId), create `admin@<domain>` mailbox, write MX `@` / TXT `@` SPF / TXT `_dkim` / TXT `_dmarc` through otter (skipping records that already exist) → mark provisioned. Replayed jobs no-op. Placeholder record values live in pigeon env (`MAIL_HOST`, `MAIL_SPF_TXT`, `MAIL_DKIM_TXT`, `MAIL_DMARC_TXT`) — no real mail infra yet; swap in a provider later.
 - **Dashboard**: `/account` (server component) renders domains + pending/failed orders from `getMyDomains()`/`getMyOrders()`.
 - **DNS**: `/account/[domainName]` detail page → hog `GET/POST/PATCH/DELETE /api/v1/domains/:name/dns` (ownership checked via weasel) → otter (source of truth, Postgres) → local write + enqueue `dns-sync` job → otter in-process worker → heron `/v1/dns/:domain/records` → name.com. Records have `syncStatus` pending|synced|error and `registryRecordId`. First view pulls/imports existing name.com records.
 - **Registrar settings**: `/api/v1/domains/:name/settings` GET/PATCH (ownership checked via weasel) → heron `/v1/domains/:name` + toggle/setNameservers endpoints → name.com (autorenew, whois privacy, transfer lock, nameservers). hog maps settings patch fields to heron `{enabled}`/`{nameservers}` payloads.
-- **Queues**: BullMQ + Redis. `domains-jobs` (beaver), `purchases` (badger), `dns-sync` (otter). Queues are for async writes only — sync request-path reads use cache + rate limiting, never queues.
+- **Queues**: BullMQ + Redis. `domains-jobs` (beaver), `purchases` (badger), `dns-sync` (otter), `email-jobs` (pigeon). Queues are for async writes only — sync request-path reads use cache + rate limiting, never queues.
 
 ## Docker compose
 
@@ -81,9 +83,9 @@ Durable production data = **Postgres** (one instance, one DB per service). **sql
 
 ## Test commands
 
-- Unit tests: `bun test` in `system/hog`, `system/heron`, `system/mockingbird`.
+- Unit tests: `bun test` in `system/hog`, `system/heron`, `system/mockingbird`, `system/pigeon`.
 - Typecheck: `bunx tsc --noEmit` in each service; `npx tsc --noEmit` + `npm run lint` in client.
-- Local dev requires: local Postgres with DBs created (`createdb d2gres d2weasel d2wombat d2otter`), local redis. `docker compose` handles all of it in containers.
+- Local dev requires: local Postgres with DBs created (`createdb d2gres d2weasel d2wombat d2otter d2pigeon`), local redis. `docker compose` handles all of it in containers.
 
 ## Direction / roadmap
 
@@ -91,6 +93,7 @@ Completed: login, public search, buy flow, dashboard, DNS management (otter + sy
 Hardening (done): internal-auth token (`x-internal-token`, `INTERNAL_TOKEN` env) enforced on heron/weasel/wombat/otter and sent by hog/badger/otter; worker saga tests (badger purchase, otter dns-sync via `createSyncProcessor`); request-id propagation (`x-request-id` through hog→weasel/otter/heron) + structured JSON request logs + hog `/metrics` (Prometheus text); DNS-sync idempotency (reconcile-adopt on duplicate create).
 Billing depth (done): wombat payment methods (CRUD + default), charge lifecycle (pending→succeeded/failed/refunded) behind a `PaymentProcessor` interface with a fake processor that declines charges ≥ `FAKE_PAYMENT_FAIL_MIN_CENTS` (0 = never), refunds, and a `ledger_entries` audit log. badger treats a declined charge as terminal (order failed). Real provider (Stripe) = a new `PaymentProcessor` impl.
 Client polish (done): order history page (`/account/orders`), whois/registrant contacts on the domain detail page, per-user rate limits on DNS/settings (namespaced buckets), per-domain search-cache invalidation on buy.
+Email add-on (done): catalog (hog `EMAIL_PLANS`), quote/buy with addons (`totalCents`, `addons`, `paymentMethodId` on weasel orders), badger charges `totalCents` + passes `paymentMethodId`, `email-jobs` enqueue at buy, and pigeon (BullMQ `email-jobs` consumer) provisions `admin@<domain>` + MX/SPF/DKIM/DMARC via otter with idempotent replay. Real mail infra (provider-backed or self-hosted) is deferred; placeholder DNS values live in pigeon env.
 Up next (agreed order):
 - **Deploy** is intentionally deferred (managed Postgres, hosts, CI, TLS) — everything runs locally/compose.
 - **Future service extractions** on trigger (don't pre-build): notifications (nightingale), identity (meerkat), events (kestrel), etc.

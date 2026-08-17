@@ -10,6 +10,8 @@ export interface Order {
   years: number;
   purchaseType: string;
   priceCents: number;
+  totalCents: number | null;
+  paymentMethodId: string | null;
   status: string;
   error: string | null;
 }
@@ -68,7 +70,8 @@ export async function chargeWombat(order: Order): Promise<void> {
   const { status, data } = await apiFetch(`${WOMBAT_URL}/internal/charges`, "POST", {
     orderId: order.id,
     userId: order.userId,
-    amountCents: order.priceCents,
+    amountCents: order.totalCents ?? order.priceCents,
+    paymentMethodId: order.paymentMethodId ?? undefined,
   });
   if (status >= 400 && status < 500) {
     throw new WorkerError(`charge declined (${status})`, false);

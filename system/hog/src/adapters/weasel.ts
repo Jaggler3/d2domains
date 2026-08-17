@@ -1,5 +1,6 @@
 import { HttpError } from "../lib/http";
 import { getRequestId } from "../lib/request-id";
+import type { AddonLine } from "../services/catalog";
 
 export interface Order {
   id: string;
@@ -8,12 +9,41 @@ export interface Order {
   years: number;
   purchaseType: string;
   priceCents: number;
+  totalCents: number;
+  paymentMethodId: string | null;
+  addons: AddonLine[];
   currency: string;
   status: string;
   idempotencyKey: string;
   error: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+interface RawOrder {
+  id: string;
+  userId: string;
+  domainName: string;
+  years: number;
+  purchaseType: string;
+  priceCents: number;
+  totalCents: number | null;
+  paymentMethodId: string | null;
+  addons: AddonLine[] | null;
+  currency: string;
+  status: string;
+  idempotencyKey: string;
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function normalizeOrder(order: RawOrder): Order {
+  return {
+    ...order,
+    totalCents: order.totalCents ?? order.priceCents,
+    addons: order.addons ?? [],
+  };
 }
 
 export interface DomainRow {
@@ -55,6 +85,12 @@ export function createWeaselClient(config: { baseUrl: string; internalToken: str
     return data as T;
   }
 
+  function orderResponse(
+    data: { order: RawOrder },
+  ): { order: Order } {
+    return { order: normalizeOrder(data.order) };
+  }
+
   return {
     createOrder(input: {
       userId: string;
@@ -62,29 +98,39 @@ export function createWeaselClient(config: { baseUrl: string; internalToken: str
       years: number;
       purchaseType: string;
       priceCents: number;
+      totalCents: number;
+      paymentMethodId?: string | null;
+      addons: AddonLine[];
       idempotencyKey: string;
     }) {
-      return req<{ order: Order; reused: boolean }>("/internal/orders", {
+      return req<{ order: RawOrder; reused: boolean }>("/internal/orders", {
         method: "POST",
         body: input,
-      });
+      }).then(({ order, reused }) => ({ order: normalizeOrder(order), reused }));
     },
     patchOrder(
       id: string,
-      patch: { status?: string; error?: string | null },
+      patch: {
+        status?: string;
+        error?: string | null;
+        totalCents?: number;
+        paymentMethodId?: string | null;
+        addons?: AddonLine[];
+        years?: number;
+      },
     ) {
-      return req<{ order: Order }>(`/internal/orders/${id}`, {
+      return req<{ order: RawOrder }>(`/internal/orders/${id}`, {
         method: "PATCH",
         body: patch,
-      });
+      }).then(orderResponse);
     },
     getOrder(id: string) {
-      return req<{ order: Order }>(`/internal/orders/${id}`);
+      return req<{ order: RawOrder }>(`/internal/orders/${id}`).then(orderResponse);
     },
     listOrders(userId: string) {
-      return req<{ orders: Order[] }>(
+      return req<{ orders: RawOrder[] }>(
         `/internal/orders?userId=${encodeURIComponent(userId)}`,
-      );
+      ).then(({ orders }) => ({ orders: orders.map(normalizeOrder) }));
     },
     listDomains(userId: string) {
       return req<{ domains: DomainRow[] }>(

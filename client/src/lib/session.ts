@@ -20,6 +20,14 @@ export interface DomainRow {
   orderId: string;
 }
 
+export interface AddonLine {
+  type: string;
+  plan: string;
+  mailboxes: number;
+  years: number;
+  priceCents: number;
+}
+
 export interface Order {
   id: string;
   userId: string;
@@ -27,6 +35,9 @@ export interface Order {
   years: number;
   purchaseType: string;
   priceCents: number;
+  totalCents: number | null;
+  paymentMethodId: string | null;
+  addons: AddonLine[] | null;
   currency: string;
   status: string;
   error: string | null;

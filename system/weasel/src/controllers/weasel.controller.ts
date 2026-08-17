@@ -5,18 +5,33 @@ import { db } from "../db/client";
 import { domains, orders } from "../db/schema";
 import { HttpError } from "../lib/http";
 
+const addonSchema = z.object({
+  type: z.string().min(1),
+  plan: z.string().min(1),
+  mailboxes: z.number().int().min(1).default(1),
+  years: z.number().int().min(1).max(10).default(1),
+  priceCents: z.number().int().positive(),
+});
+
 const createOrderSchema = z.object({
   userId: z.string().min(1),
   domainName: z.string().min(1),
   years: z.number().int().min(1).max(10).default(1),
   purchaseType: z.enum(["registration", "premium"]).default("registration"),
   priceCents: z.number().int().positive(),
+  totalCents: z.number().int().positive().optional(),
+  paymentMethodId: z.string().nullable().optional(),
+  addons: z.array(addonSchema).optional().default([]),
   idempotencyKey: z.string().min(1),
 });
 
 const patchOrderSchema = z.object({
   status: z.enum(["pending", "purchased", "failed"]).optional(),
   error: z.string().nullable().optional(),
+  totalCents: z.number().int().positive().optional(),
+  paymentMethodId: z.string().nullable().optional(),
+  addons: z.array(addonSchema).optional(),
+  years: z.number().int().min(1).max(10).optional(),
 });
 
 const createDomainSchema = z.object({
@@ -52,6 +67,9 @@ export const weaselController = {
         years: parsed.data.years,
         purchaseType: parsed.data.purchaseType,
         priceCents: parsed.data.priceCents,
+        totalCents: parsed.data.totalCents ?? parsed.data.priceCents,
+        paymentMethodId: parsed.data.paymentMethodId ?? null,
+        addons: parsed.data.addons,
         idempotencyKey: parsed.data.idempotencyKey,
       })
       .returning();
@@ -70,6 +88,14 @@ export const weaselController = {
       .set({
         ...(parsed.data.status ? { status: parsed.data.status } : {}),
         ...(parsed.data.error !== undefined ? { error: parsed.data.error } : {}),
+        ...(parsed.data.totalCents !== undefined
+          ? { totalCents: parsed.data.totalCents }
+          : {}),
+        ...(parsed.data.paymentMethodId !== undefined
+          ? { paymentMethodId: parsed.data.paymentMethodId }
+          : {}),
+        ...(parsed.data.addons !== undefined ? { addons: parsed.data.addons } : {}),
+        ...(parsed.data.years !== undefined ? { years: parsed.data.years } : {}),
         updatedAt: new Date(),
       })
       .where(eq(orders.id, id))

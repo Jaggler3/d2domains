@@ -37,6 +37,13 @@ domainsRouter.post(
   (c) => ordersController.buy(c),
 );
 
+domainsRouter.post(
+  "/quote",
+  requireAuth,
+  userLimit("quote", 60),
+  (c) => ordersController.quote(c),
+);
+
 domainsRouter.get("/", requireAuth, (c) => ordersController.list(c));
 
 domainsRouter.get("/:domainName/dns", requireAuth, userLimit("dns:read", 120), (c) => dnsController.list(c));

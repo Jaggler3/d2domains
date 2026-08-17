@@ -8,15 +8,19 @@ export const proxy: NextProxy = async (request) => {
 
   const headers = new Headers(request.headers);
   headers.set("host", upstream.host);
+  headers.delete("transfer-encoding");
+
+  const body =
+    request.method === "GET" || request.method === "HEAD"
+      ? undefined
+      : request.body
+        ? new Uint8Array(await request.arrayBuffer())
+        : undefined;
 
   const upstreamResponse = await fetch(upstream, {
     method: request.method,
     headers,
-    body:
-      request.method === "GET" || request.method === "HEAD"
-        ? undefined
-        : request.body,
-    duplex: "half",
+    body,
     redirect: "manual",
   } as RequestInit);
 

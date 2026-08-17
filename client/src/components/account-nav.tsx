@@ -16,7 +16,7 @@ const navItems = [
   { label: "dashboard", icon: LayoutGrid, href: "/account", ready: true },
   { label: "orders", icon: Receipt, href: "/account/orders", ready: true },
   { label: "transfers", icon: ArrowLeftRight, href: "/account", ready: false },
-  { label: "billing", icon: CreditCard, href: "/account", ready: false },
+  { label: "billing", icon: CreditCard, href: "/account/billing", ready: true },
   { label: "settings", icon: Settings, href: "/account", ready: false },
 ];
 

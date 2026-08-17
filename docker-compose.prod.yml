@@ -37,3 +37,7 @@ services:
   beaver:
     command: bun run src/index.ts
     restart: unless-stopped
+
+  pigeon:
+    command: bun run src/index.ts
+    restart: unless-stopped

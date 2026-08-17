@@ -39,6 +39,7 @@ export interface BillingRepo {
     providerRef?: string | null;
     failureReason?: string | null;
   }): Promise<void>;
+  deleteChargeByOrderId(orderId: string): Promise<void>;
   getPaymentMethod(id: string): Promise<PaymentMethodRow | null>;
   getDefaultPaymentMethod(userId: string): Promise<PaymentMethodRow | null>;
   createDefaultPaymentMethod(userId: string): Promise<PaymentMethodRow>;
@@ -100,7 +101,12 @@ export function createBillingService(
       paymentMethodId?: string | null;
     }): Promise<{ charge: Charge; reused: boolean }> {
       const existing = await repo.getChargeByOrderId(input.orderId);
-      if (existing) return { charge: existing, reused: true };
+      if (existing && existing.status !== "failed") {
+        return { charge: existing, reused: true };
+      }
+      // A failed charge can be retried (e.g. with a different card): drop the
+      // old attempt so a fresh one is made.
+      if (existing) await repo.deleteChargeByOrderId(input.orderId);
 
       const method = await resolvePaymentMethod(input.userId, input.paymentMethodId);
       const charge = await repo.insertCharge({

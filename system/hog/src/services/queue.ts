@@ -17,6 +17,10 @@ export const purchasesQueue = new Queue("purchases", {
   connection: redis,
 });
 
+export const emailQueue = new Queue("email-jobs", {
+  connection: redis,
+});
+
 export interface SearchLogPayload {
   userId: string;
   keyword: string;
@@ -54,7 +58,25 @@ export async function enqueuePurchase(orderId: string): Promise<void> {
   }
 }
 
+export async function enqueueEmailProvision(orderId: string): Promise<void> {
+  try {
+    await emailQueue.add(
+      "provision",
+      { orderId },
+      {
+        attempts: 5,
+        backoff: { type: "exponential", delay: 1000 },
+        removeOnComplete: 100,
+        removeOnFail: 500,
+      },
+    );
+  } catch (err) {
+    console.error("[hog] failed to enqueue email job", err);
+  }
+}
+
 export async function shutdownQueue(): Promise<void> {
   await domainsQueue.close();
   await purchasesQueue.close();
+  await emailQueue.close();
 }

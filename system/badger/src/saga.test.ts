@@ -49,6 +49,8 @@ const order = {
   years: 1,
   purchaseType: "registration",
   priceCents: 1299,
+  totalCents: null as number | null,
+  paymentMethodId: null as string | null,
   status: "pending",
   error: null,
 };
@@ -88,6 +90,29 @@ describe("purchase saga", () => {
 
     const patches = calls.filter((c) => c.method === "PATCH");
     expect(patches.at(-1)?.body).toMatchObject({ status: "purchased" });
+  });
+
+  test("charges totalCents and passes paymentMethodId when present", async () => {
+    const withAddon = {
+      ...order,
+      priceCents: 1299,
+      totalCents: 4298,
+      paymentMethodId: "pm_123",
+      years: 1,
+    };
+    const calls = stubRoutes(orderRoutes(withAddon));
+    await expect(processPurchase("o1")).resolves.toBeUndefined();
+
+    const charge = calls.find((c) => c.url.includes("/internal/charges"));
+    expect(charge?.body).toMatchObject({
+      orderId: "o1",
+      userId: "u1",
+      amountCents: 4298,
+      paymentMethodId: "pm_123",
+    });
+
+    const register = calls.find((c) => c.url.includes("/v1/register"));
+    expect(register?.body).toMatchObject({ purchasePrice: 12.99 });
   });
 
   test("skips when order is already purchased (idempotent)", async () => {

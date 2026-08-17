@@ -1,4 +1,12 @@
-import { pgTable, uuid, text, integer, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, integer, jsonb, timestamp } from "drizzle-orm/pg-core";
+
+export interface AddonLine {
+  type: string;
+  plan: string;
+  mailboxes: number;
+  years: number;
+  priceCents: number;
+}
 
 export const orders = pgTable("orders", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -7,6 +15,9 @@ export const orders = pgTable("orders", {
   years: integer("years").notNull().default(1),
   purchaseType: text("purchase_type").notNull().default("registration"),
   priceCents: integer("price_cents").notNull(),
+  totalCents: integer("total_cents"),
+  paymentMethodId: text("payment_method_id"),
+  addons: jsonb("addons").$type<AddonLine[]>().notNull().default([]),
   currency: text("currency").notNull().default("usd"),
   status: text("status").notNull().default("pending"),
   idempotencyKey: text("idempotency_key").notNull().unique(),

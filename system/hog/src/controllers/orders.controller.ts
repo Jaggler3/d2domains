@@ -1,10 +1,26 @@
 import type { Context } from "hono";
 import { z } from "zod";
-import { buyDomain, getOrder, listDomains, listOrders } from "../services/orders.service";
+import { buyDomain, getOrder, listDomains, listOrders, quoteDomain } from "../services/orders.service";
 import { HttpError } from "../lib/http";
 import type { AuthVariables } from "../middleware/auth";
 
 const buySchema = z.object({
+  domainName: z.string().min(1).max(253),
+  years: z.number().int().min(1).max(10).optional(),
+  paymentMethodId: z.string().nullable().optional(),
+  addons: z
+    .array(
+      z.object({
+        type: z.string().optional(),
+        plan: z.string().optional(),
+        mailboxes: z.number().int().min(1).max(100).optional(),
+        years: z.number().int().min(1).max(10).optional(),
+      }),
+    )
+    .optional(),
+});
+
+const quoteSchema = z.object({
   domainName: z.string().min(1).max(253),
   years: z.number().int().min(1).max(10).optional(),
 });
@@ -18,6 +34,16 @@ export const ordersController = {
     }
     const order = await buyDomain(c.var.user.id, parsed.data);
     return c.json({ order }, 202);
+  },
+
+  async quote(c: Context<{ Variables: AuthVariables }>) {
+    const body = await c.req.json().catch(() => null);
+    const parsed = quoteSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new HttpError("invalid quote request", 422, parsed.error.flatten());
+    }
+    const quote = await quoteDomain(c.var.user.id, parsed.data);
+    return c.json({ quote });
   },
 
   async list(c: Context<{ Variables: AuthVariables }>) {

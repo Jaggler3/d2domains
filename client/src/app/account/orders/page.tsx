@@ -68,29 +68,41 @@ export default async function OrdersPage() {
           {orders.map((o) => (
             <li
               key={o.id}
-              className="flex items-center justify-between gap-4 px-4 py-4"
+              className="flex flex-col gap-1 px-4 py-4"
             >
-              <div className="flex min-w-0 flex-col gap-0.5">
-                <div className="flex items-center gap-3">
+              <div className="flex min-w-0 items-center justify-between gap-4">
+                <div className="flex min-w-0 items-center gap-3">
                   <span className="truncate font-mono text-sm">
                     {o.domainName}
                   </span>
                   {statusBadge(o.status)}
                 </div>
-                <span className="text-xs text-muted-foreground">
-                  {new Date(o.createdAt).toLocaleString("en-US", {
-                    year: "numeric",
-                    month: "short",
-                    day: "numeric",
-                    hour: "numeric",
-                    minute: "2-digit",
-                  })}
-                  {o.status === "failed" && o.error ? ` · ${o.error}` : ""}
+                <span className="shrink-0 text-sm font-medium tabular-nums">
+                  ${((o.totalCents ?? o.priceCents) / 100).toFixed(2)}
                 </span>
               </div>
-              <span className="shrink-0 text-sm font-medium tabular-nums">
-                ${(o.priceCents / 100).toFixed(2)}
+              <span className="text-xs text-muted-foreground">
+                {new Date(o.createdAt).toLocaleString("en-US", {
+                  year: "numeric",
+                  month: "short",
+                  day: "numeric",
+                  hour: "numeric",
+                  minute: "2-digit",
+                })}
+                {o.status === "failed" && o.error ? ` · ${o.error}` : ""}
               </span>
+              {o.addons && o.addons.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {o.addons.map((a, i) => (
+                    <span
+                      key={i}
+                      className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground"
+                    >
+                      {a.type} · {a.plan} · ${(a.priceCents / 100).toFixed(2)}
+                    </span>
+                  ))}
+                </div>
+              )}
             </li>
           ))}
         </ul>

@@ -6,7 +6,7 @@ import {
   type Charge,
   type PaymentMethodRow,
 } from "./billing";
-import { createFakeProcessor } from "./processor";
+import { createFakeProcessor, type PaymentProcessor } from "./processor";
 
 function inMemoryRepo() {
   let seq = 0;
@@ -45,6 +45,10 @@ function inMemoryRepo() {
         ...(patch.providerRef !== undefined ? { providerRef: patch.providerRef } : {}),
         ...(patch.failureReason !== undefined ? { failureReason: patch.failureReason } : {}),
       });
+    },
+    async deleteChargeByOrderId(orderId) {
+      const c = [...charges.values()].find((x) => x.orderId === orderId);
+      if (c) charges.delete(c.id);
     },
     async getPaymentMethod(id) {
       return methods.get(id) ?? null;
@@ -199,5 +203,37 @@ describe("billing service", () => {
         paymentMethodId: method.id,
       }),
     ).rejects.toMatchObject({ status: 404 });
+  });
+
+  test("a declined charge can be retried (failed charges are re-attempted)", async () => {
+    const { repo, ledger } = inMemoryRepo();
+    let fail = true;
+    const processor: PaymentProcessor = {
+      charge: async () =>
+        fail
+          ? { ok: false, failureReason: "card declined" }
+          : { ok: true, ref: "fake_retry" },
+    };
+    const billing = createBillingService(repo, processor);
+
+    const first = await billing.chargeOrder({
+      orderId: "o1",
+      userId: "u1",
+      amountCents: 2500,
+    });
+    expect(first.reused).toBe(false);
+    expect(first.charge.status).toBe("failed");
+    expect(ledger).toHaveLength(0);
+
+    fail = false;
+    const second = await billing.chargeOrder({
+      orderId: "o1",
+      userId: "u1",
+      amountCents: 2500,
+    });
+    expect(second.reused).toBe(false);
+    expect(second.charge.status).toBe("succeeded");
+    expect(second.charge.providerRef).toBe("fake_retry");
+    expect(ledger).toHaveLength(1);
   });
 });

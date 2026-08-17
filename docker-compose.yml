@@ -5,6 +5,7 @@ services:
     command: bun run --watch src/index.ts
     env_file: ./.env
     environment:
+      
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/d2gres
       REDIS_URL: redis://redis:6379
       REGISTRY_URL: http://heron:8783
@@ -40,6 +41,7 @@ services:
     command: bun run --watch src/index.ts
     env_file: ./.env
     environment:
+      
       HERON_PORT: 8783
       REDIS_URL: redis://redis:6379
     ports:
@@ -65,6 +67,7 @@ services:
     command: bun run --watch src/index.ts
     env_file: ./.env
     environment:
+      
       WEASEL_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/d2weasel
       WEASEL_PORT: 8781
     ports:
@@ -90,6 +93,7 @@ services:
     command: bun run --watch src/index.ts
     env_file: ./.env
     environment:
+      
       WOMBAT_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/d2wombat
       WOMBAT_PORT: 8782
     ports:
@@ -115,6 +119,7 @@ services:
     command: bun run --watch src/index.ts
     env_file: ./.env
     environment:
+      
       REDIS_URL: redis://redis:6379
       REGISTRY_URL: http://heron:8783
       WEASEL_URL: http://weasel:8781
@@ -140,6 +145,7 @@ services:
     command: bun run --watch src/index.ts
     env_file: ./.env
     environment:
+      
       OTTER_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/d2otter
       REDIS_URL: redis://redis:6379
       REGISTRY_URL: http://heron:8783
@@ -169,6 +175,7 @@ services:
     command: bun run --watch src/index.ts
     env_file: ./.env
     environment:
+      
       REDIS_URL: redis://redis:6379
     depends_on:
       redis:
@@ -184,6 +191,34 @@ services:
             - data
         - action: rebuild
           path: ./system/beaver/package.json
+
+  pigeon:
+    build:
+      context: ./system/pigeon
+    command: bun run --watch src/index.ts
+    env_file: ./.env
+    environment:
+      PIGEON_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/d2pigeon
+      REDIS_URL: redis://redis:6379
+      WEASEL_URL: http://weasel:8781
+      OTTER_URL: http://otter:8784
+      PIGEON_PORT: 8785
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    develop:
+      watch:
+        - action: sync
+          path: ./system/pigeon
+          target: /app
+          ignore:
+            - node_modules
+            - .env*
+            - data
+        - action: rebuild
+          path: ./system/pigeon/package.json
 
   redis:
     image: redis:7-alpine

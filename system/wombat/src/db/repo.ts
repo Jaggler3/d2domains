@@ -63,6 +63,9 @@ export const billingRepo: BillingRepo = {
       })
       .where(eq(charges.id, id));
   },
+  async deleteChargeByOrderId(orderId) {
+    await db.delete(charges).where(eq(charges.orderId, orderId));
+  },
   async getPaymentMethod(id) {
     const row = await db.query.paymentMethods.findFirst({ where: eq(paymentMethods.id, id) });
     return row ? toMethod(row) : null;
