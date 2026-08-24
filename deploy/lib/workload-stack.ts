@@ -117,7 +117,7 @@ export class WorkloadStack extends Stack {
         name: "postgres",
       },
     });
-    postgresService.connections.allowFromAnyIpv4(ec2.Port.tcp(5432));
+    postgresService.connections.allowFrom(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.tcp(5432));
 
     // Redis Service
     const redisTask = new ecs.FargateTaskDefinition(this, "RedisTask", {
@@ -140,7 +140,7 @@ export class WorkloadStack extends Stack {
         name: "redis",
       },
     });
-    redisService.connections.allowFromAnyIpv4(ec2.Port.tcp(6379));
+    redisService.connections.allowFrom(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.tcp(6379));
 
     for (const service of appServices) {
       const image = new ecrAssets.DockerImageAsset(this, `${service.name}Image`, {
@@ -187,7 +187,7 @@ export class WorkloadStack extends Stack {
       });
 
       if (service.port > 0) {
-        ecsService.connections.allowFromAnyIpv4(ec2.Port.tcp(service.port));
+        ecsService.connections.allowFrom(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.tcp(service.port));
       }
     }
   }
