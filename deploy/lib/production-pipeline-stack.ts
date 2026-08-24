@@ -75,7 +75,7 @@ export class ProductionPipelineStack extends Stack {
         phases: {
           build: {
             commands: [
-              "npx cdk deploy D2DomainsWorkloadStack --require-approval never --app cdk.out",
+              "npx cdk deploy D2DomainsWorkloadStack --require-approval never --app .",
             ],
           },
         },
