@@ -89,9 +89,7 @@ export class WorkloadStack extends Stack {
 
     // Postgres Service
     const postgresImage = new ecrAssets.DockerImageAsset(this, "PostgresImage", {
-      directory: "../",
-      exclude: ["deploy/cdk.out", "deploy/node_modules", ".git", "node_modules"],
-      file: "deploy/Dockerfile.postgres",
+      directory: "../init/postgres",
       platform: ecrAssets.Platform.LINUX_AMD64,
     });
     
