@@ -35,7 +35,7 @@ export class WorkloadStack extends Stack {
 
     const cluster = new ecs.Cluster(this, "Cluster", {
       vpc,
-      containerInsights: true,
+      containerInsightsV2: ecs.ContainerInsights.ENABLED,
     });
 
     cluster.addDefaultCloudMapNamespace({
@@ -57,6 +57,15 @@ export class WorkloadStack extends Stack {
       buildArgs: {
         HOG_URL: "http://hog.d2domains.local:8787",
       },
+      exclude: [
+        "node_modules",
+        ".next",
+        ".git",
+        "playwright-report",
+        "test-results",
+        "tests",
+        "cdk.out",
+      ],
     });
 
     new ecsPatterns.ApplicationLoadBalancedFargateService(this, "ClientService", {
@@ -140,6 +149,11 @@ export class WorkloadStack extends Stack {
         directory: `../system/${service.name}`,
         file: "Dockerfile",
         platform: ecrAssets.Platform.LINUX_AMD64,
+        exclude: [
+          "node_modules",
+          ".git",
+          "cdk.out",
+        ],
       });
 
       const taskDefinition = new ecs.FargateTaskDefinition(this, `${service.name}Task`, {
