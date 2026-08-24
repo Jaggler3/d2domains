@@ -19,8 +19,8 @@ export const emailRouter = new Hono()
     });
 
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new HttpError(data.error ?? "dove error", res.status);
+      const data = (await res.json().catch(() => null)) as { error?: string } | null;
+      throw new HttpError(data?.error ?? "dove error", res.status);
     }
 
     return c.json(await res.json());

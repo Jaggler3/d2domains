@@ -1,14 +1,18 @@
 import type { Context } from "hono";
 import { z } from "zod";
+import Stripe from "stripe";
 import { BillingError, createBillingService } from "../billing";
 import { billingRepo } from "../db/repo";
-import { createFakeProcessor } from "../processor";
+import { createFakeProcessor, createStripeProcessor } from "../processor";
 import { HttpError } from "../lib/http";
 import { loadEnv } from "../config/env";
 
 const env = loadEnv();
 
-const billing = createBillingService(billingRepo, createFakeProcessor(env.FAKE_PAYMENT_FAIL_MIN_CENTS));
+const processor = env.STRIPE_SECRET_KEY
+  ? createStripeProcessor(env.STRIPE_SECRET_KEY)
+  : createFakeProcessor(env.FAKE_PAYMENT_FAIL_MIN_CENTS);
+const billing = createBillingService(billingRepo, processor);
 
 const chargeSchema = z.object({
   orderId: z.string().min(1),
@@ -30,6 +34,8 @@ const methodSchema = z.object({
   expMonth: z.number().int().min(1).max(12).nullable().optional(),
   expYear: z.number().int().min(2000).max(2100).nullable().optional(),
 });
+
+const stripe = env.STRIPE_SECRET_KEY ? new Stripe(env.STRIPE_SECRET_KEY) : null;
 
 function userIdOf(c: Context): string {
   const userId = c.req.query("userId");
@@ -60,8 +66,28 @@ export const wombatController = {
     const body = await c.req.json().catch(() => null);
     const parsed = methodSchema.safeParse(body);
     if (!parsed.success) throw new HttpError("invalid payment method", 422);
-    const method = await billingRepo.addPaymentMethod(parsed.data.userId, parsed.data);
+    let methodInput = parsed.data;
+    if (stripe && parsed.data.token?.startsWith("pm_")) {
+      const paymentMethod = await stripe.paymentMethods.retrieve(parsed.data.token);
+      const card = paymentMethod.card;
+      if (!card) throw new HttpError("stripe payment method missing card", 422);
+      methodInput = {
+        ...parsed.data,
+        brand: card.brand ?? parsed.data.brand,
+        last4: card.last4 ?? parsed.data.last4,
+        token: paymentMethod.id,
+      };
+    }
+    const method = await billingRepo.addPaymentMethod(methodInput.userId, methodInput);
     return c.json({ paymentMethod: method }, 201);
+  },
+
+  async createSetupIntent(c: Context) {
+    if (!stripe) throw new HttpError("stripe is not configured", 503);
+    const intent = await stripe.setupIntents.create({
+      payment_method_types: ["card"],
+    });
+    return c.json({ clientSecret: intent.client_secret });
   },
 
   async listPaymentMethods(c: Context) {

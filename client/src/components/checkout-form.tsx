@@ -4,9 +4,10 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Loader2, Plus, Trash2 } from "lucide-react";
+import { CardElement, Elements, useElements, useStripe } from "@stripe/react-stripe-js";
+import { loadStripe } from "@stripe/stripe-js";
 import { Brand } from "@/components/brand";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Card,
@@ -18,6 +19,7 @@ import {
 import { cn } from "@/lib/utils";
 import {
   addPaymentMethod,
+  createSetupIntent,
   buyDomain,
   getPaymentMethods,
   quoteDomain,
@@ -29,6 +31,8 @@ import {
 } from "@/lib/checkout";
 
 const YEARS = [1, 2, 3, 5, 10];
+const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "");
+const useTestCardForm = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY === "pk_test_playwright_stub";
 
 const money = (cents: number | null | undefined) =>
   cents == null ? "—" : `$${(cents / 100).toFixed(2)}`;
@@ -46,10 +50,6 @@ export function CheckoutForm({ domain }: { domain: string }) {
   const [emailEnabled, setEmailEnabled] = useState(false);
 
   const [showAddCard, setShowAddCard] = useState(false);
-  const [cardBrand, setCardBrand] = useState("Visa");
-  const [cardLast4, setCardLast4] = useState("");
-  const [cardExpMonth, setCardExpMonth] = useState("");
-  const [cardExpYear, setCardExpYear] = useState("");
   const [addingCard, setAddingCard] = useState(false);
 
   const [buying, setBuying] = useState(false);
@@ -106,33 +106,6 @@ export function CheckoutForm({ domain }: { domain: string }) {
         : (m.find((x) => x.isDefault)?.id ?? null),
     );
   }, []);
-
-  async function addCard(e: React.FormEvent) {
-    e.preventDefault();
-    if (cardLast4.length !== 4) {
-      setError("last 4 digits are required");
-      return;
-    }
-    setAddingCard(true);
-    setError(null);
-    const method = await addPaymentMethod({
-      brand: cardBrand.trim() || "Visa",
-      last4: cardLast4,
-      expMonth: cardExpMonth ? Number(cardExpMonth) : null,
-      expYear: cardExpYear ? Number(cardExpYear) : null,
-    });
-    setAddingCard(false);
-    if (!method) {
-      setError("failed to add card");
-      return;
-    }
-    await refreshMethods();
-    setSelectedMethod(method.id);
-    setShowAddCard(false);
-    setCardLast4("");
-    setCardExpMonth("");
-    setCardExpYear("");
-  }
 
   async function makeDefault(id: string) {
     if (await setDefaultPaymentMethod(id)) await refreshMethods();
@@ -282,11 +255,18 @@ export function CheckoutForm({ domain }: { domain: string }) {
                   <ul className="flex flex-col gap-2">
                     {methods.map((m) => (
                       <li key={m.id}>
-                        <button
-                          type="button"
+                        <div
+                          role="button"
+                          tabIndex={0}
                           onClick={() => setSelectedMethod(m.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              setSelectedMethod(m.id);
+                            }
+                          }}
                           className={cn(
-                            "flex w-full items-center justify-between gap-3 rounded-lg border border-border bg-background px-3 py-2 text-left text-sm transition-colors",
+                            "flex w-full items-center justify-between gap-3 rounded-lg border border-border bg-background px-3 py-2 text-left text-sm transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
                             selectedMethod === m.id &&
                               "ring-2 ring-primary/40",
                           )}
@@ -335,7 +315,7 @@ export function CheckoutForm({ domain }: { domain: string }) {
                               <Trash2 />
                             </Button>
                           </span>
-                        </button>
+                        </div>
                       </li>
                     ))}
                   </ul>
@@ -347,81 +327,23 @@ export function CheckoutForm({ domain }: { domain: string }) {
                 )}
 
                 {showAddCard && (
-                  <form
-                    onSubmit={addCard}
-                    className="flex flex-col gap-3 rounded-lg border border-border bg-background p-3"
-                  >
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="flex flex-col gap-1.5">
-                        <Label htmlFor="card-brand" className="text-xs">
-                          brand
-                        </Label>
-                        <Input
-                          id="card-brand"
-                          value={cardBrand}
-                          onChange={(e) => setCardBrand(e.target.value)}
-                          placeholder="Visa"
-                        />
-                      </div>
-                      <div className="flex flex-col gap-1.5">
-                        <Label htmlFor="card-last4" className="text-xs">
-                          last 4
-                        </Label>
-                        <Input
-                          id="card-last4"
-                          value={cardLast4}
-                          onChange={(e) =>
-                            setCardLast4(e.target.value.replace(/\D/g, "").slice(0, 4))
-                          }
-                          placeholder="4242"
-                          inputMode="numeric"
-                          required
-                        />
-                      </div>
-                      <div className="flex flex-col gap-1.5">
-                        <Label htmlFor="card-exp-month" className="text-xs">
-                          exp month
-                        </Label>
-                        <Input
-                          id="card-exp-month"
-                          value={cardExpMonth}
-                          onChange={(e) =>
-                            setCardExpMonth(e.target.value.replace(/\D/g, "").slice(0, 2))
-                          }
-                          placeholder="12"
-                          inputMode="numeric"
-                        />
-                      </div>
-                      <div className="flex flex-col gap-1.5">
-                        <Label htmlFor="card-exp-year" className="text-xs">
-                          exp year
-                        </Label>
-                        <Input
-                          id="card-exp-year"
-                          value={cardExpYear}
-                          onChange={(e) =>
-                            setCardExpYear(e.target.value.replace(/\D/g, "").slice(0, 4))
-                          }
-                          placeholder="2028"
-                          inputMode="numeric"
-                        />
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button type="submit" size="sm" disabled={addingCard}>
-                        {addingCard && <Loader2 className="animate-spin" />}
-                        save card
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        type="button"
-                        onClick={() => setShowAddCard(false)}
-                      >
-                        cancel
-                      </Button>
-                    </div>
-                  </form>
+                  <StripeCardForm
+                    onSaved={async (token) => {
+                      setAddingCard(true);
+                      setError(null);
+                      const method = await addPaymentMethod({ token });
+                      setAddingCard(false);
+                      if (!method) {
+                        setError("failed to add card");
+                        return;
+                      }
+                      await refreshMethods();
+                      setSelectedMethod(method.id);
+                      setShowAddCard(false);
+                    }}
+                    onCancel={() => setShowAddCard(false)}
+                    loading={addingCard}
+                  />
                 )}
               </div>
 
@@ -475,5 +397,146 @@ function Shell({ children }: { children: React.ReactNode }) {
         {children}
       </div>
     </div>
+  );
+}
+
+function StripeCardForm({
+  onSaved,
+  onCancel,
+  loading,
+}: {
+  onSaved: (paymentMethodId: string) => Promise<void>;
+  onCancel: () => void;
+  loading: boolean;
+}) {
+  if (useTestCardForm) {
+    return (
+      <TestCardForm onSaved={onSaved} onCancel={onCancel} loading={loading} />
+    );
+  }
+
+  return (
+    <Elements
+      stripe={stripePromise}
+      options={{
+        mode: "setup",
+        currency: "usd",
+        paymentMethodCreation: "manual",
+      }}
+    >
+      <StripeCardFormInner onSaved={onSaved} onCancel={onCancel} loading={loading} />
+    </Elements>
+  );
+}
+
+function TestCardForm({
+  onSaved,
+  onCancel,
+  loading,
+}: {
+  onSaved: (paymentMethodId: string) => Promise<void>;
+  onCancel: () => void;
+  loading: boolean;
+}) {
+  const [cardNumber, setCardNumber] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    await onSaved("pm_test_4242");
+    setSaving(false);
+  }
+
+  return (
+    <form onSubmit={submit} className="flex flex-col gap-3 rounded-lg border border-border bg-background p-3">
+      <label className="rounded-md border border-border bg-card px-3 py-2">
+        <span className="mb-2 block text-xs text-muted-foreground">card number</span>
+        <input
+          aria-label="Card number"
+          value={cardNumber}
+          onChange={(e) => setCardNumber(e.target.value)}
+          className="w-full bg-transparent text-sm outline-none"
+          placeholder="4242 4242 4242 4242"
+        />
+      </label>
+      <div className="flex items-center gap-2">
+        <Button type="submit" size="sm" disabled={saving || loading}>
+          {(saving || loading) && <Loader2 className="animate-spin" />}
+          save card
+        </Button>
+        <Button variant="ghost" size="sm" type="button" onClick={onCancel}>
+          cancel
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function StripeCardFormInner({
+  onSaved,
+  onCancel,
+  loading,
+}: {
+  onSaved: (paymentMethodId: string) => Promise<void>;
+  onCancel: () => void;
+  loading: boolean;
+}) {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [saving, setSaving] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!stripe || !elements) return;
+    setSaving(true);
+    const clientSecret = await createSetupIntent();
+    if (!clientSecret) {
+      setSaving(false);
+      return;
+    }
+    const card = elements.getElement(CardElement);
+    if (!card) {
+      setSaving(false);
+      return;
+    }
+    const result = await stripe.confirmCardSetup(clientSecret, {
+      payment_method: { card },
+    });
+    if (result.error || !result.setupIntent?.payment_method) {
+      setSaving(false);
+      return;
+    }
+    await onSaved(result.setupIntent.payment_method as string);
+    setSaving(false);
+  }
+
+  return (
+    <form onSubmit={submit} className="flex flex-col gap-3 rounded-lg border border-border bg-background p-3">
+      <div className="rounded-md border border-border bg-card px-3 py-2">
+        <CardElement
+          options={{
+            hidePostalCode: true,
+            style: {
+              base: {
+                color: "var(--foreground)",
+                fontFamily: "var(--font-geist-mono), monospace",
+                fontSize: "14px",
+                "::placeholder": { color: "var(--muted-foreground)" },
+              },
+            },
+          }}
+        />
+      </div>
+      <div className="flex items-center gap-2">
+        <Button type="submit" size="sm" disabled={saving || loading || !stripe || !elements}>
+          {(saving || loading) && <Loader2 className="animate-spin" />}
+          save card
+        </Button>
+        <Button variant="ghost" size="sm" type="button" onClick={onCancel}>
+          cancel
+        </Button>
+      </div>
+    </form>
   );
 }

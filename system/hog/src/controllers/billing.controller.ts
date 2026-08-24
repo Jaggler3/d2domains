@@ -13,8 +13,8 @@ const wombat = createWombatClient({
 });
 
 const addMethodSchema = z.object({
-  brand: z.string().min(1).max(32),
-  last4: z.string().min(4).max(4),
+  brand: z.string().min(1).max(32).optional(),
+  last4: z.string().min(4).max(4).optional(),
   token: z.string().min(1).max(200).optional(),
   expMonth: z.number().int().min(1).max(12).nullable().optional(),
   expYear: z.number().int().min(2000).max(2100).nullable().optional(),
@@ -30,11 +30,21 @@ export const billingController = {
     const body = await c.req.json().catch(() => null);
     const parsed = addMethodSchema.safeParse(body);
     if (!parsed.success) throw new HttpError("invalid payment method", 422);
-    const { paymentMethod } = await wombat.addPaymentMethod(
-      c.var.user.id,
-      parsed.data,
-    );
+    const methodInput = {
+      userId: c.var.user.id,
+      brand: parsed.data.brand ?? "Stripe",
+      last4: parsed.data.last4 ?? "0000",
+      token: parsed.data.token,
+      expMonth: parsed.data.expMonth,
+      expYear: parsed.data.expYear,
+    };
+    const { paymentMethod } = await wombat.addPaymentMethod(c.var.user.id, methodInput);
     return c.json({ paymentMethod }, 201);
+  },
+
+  async createSetupIntent(c: Context<{ Variables: AuthVariables }>) {
+    const { clientSecret } = await wombat.createSetupIntent();
+    return c.json({ clientSecret });
   },
 
   async setDefaultMethod(c: Context<{ Variables: AuthVariables }>) {

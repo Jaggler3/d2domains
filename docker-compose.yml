@@ -5,7 +5,7 @@ services:
     command: bun run --watch src/index.ts
     env_file: ./.env
     environment:
-      
+      SEED_USER: "true"
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/d2gres
       REDIS_URL: redis://redis:6379
       REGISTRY_URL: http://heron:8783
@@ -211,6 +211,17 @@ services:
         condition: service_healthy
       dove:
         condition: service_started
+    develop:
+      watch:
+        - action: sync
+          path: ./system/pigeon
+          target: /app
+          ignore:
+            - node_modules
+            - .env*
+            - data
+        - action: rebuild
+          path: ./system/pigeon/package.json
 
   dove:
     build:
@@ -232,7 +243,7 @@ services:
         condition: service_started
 
   stalwart:
-    image: stalwartlabs/mail-server:latest
+    image: stalwartlabs/mail-server:v0.11.8-alpine
     ports:
       - "25:25"
       - "587:587"
@@ -249,21 +260,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
-
-  redis:
-
-        condition: service_healthy
-    develop:
-      watch:
-        - action: sync
-          path: ./system/pigeon
-          target: /app
-          ignore:
-            - node_modules
-            - .env*
-            - data
-        - action: rebuild
-          path: ./system/pigeon/package.json
 
   redis:
     image: redis:7-alpine

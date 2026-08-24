@@ -71,5 +71,10 @@ export function createWombatClient(config: { baseUrl: string; internalToken: str
         { method: "DELETE" },
       );
     },
+    createSetupIntent() {
+      return req<{ clientSecret: string }>("/internal/payment-methods/setup-intent", {
+        method: "POST",
+      });
+    },
   };
 }

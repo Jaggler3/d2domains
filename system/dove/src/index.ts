@@ -44,8 +44,9 @@ app.use("*", async (c, next) => {
   await next();
 });
 
-app.route("/internal", requireInternalToken(env.INTERNAL_TOKEN), provisioningRouter);
-app.route("/internal", requireInternalToken(env.INTERNAL_TOKEN), mailboxRouter);
+app.use("/internal/*", requireInternalToken(env.INTERNAL_TOKEN));
+app.route("/internal", provisioningRouter);
+app.route("/internal", mailboxRouter);
 
 export default {
   port: env.DOVE_PORT,

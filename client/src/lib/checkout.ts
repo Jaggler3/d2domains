@@ -80,11 +80,21 @@ export async function getPaymentMethods(): Promise<PaymentMethod[]> {
   return data?.paymentMethods ?? [];
 }
 
+export async function createSetupIntent(): Promise<string | null> {
+  const { status, data } = await api<{ clientSecret?: string }>(
+    "/api/v1/billing/methods/setup-intent",
+    { method: "POST" },
+  );
+  if (status !== 200) return null;
+  return data?.clientSecret ?? null;
+}
+
 export async function addPaymentMethod(input: {
-  brand: string;
-  last4: string;
+  brand?: string;
+  last4?: string;
   expMonth?: number | null;
   expYear?: number | null;
+  token?: string;
 }): Promise<PaymentMethod | null> {
   const { status, data } = await api<{ paymentMethod?: PaymentMethod }>(
     "/api/v1/billing/methods",

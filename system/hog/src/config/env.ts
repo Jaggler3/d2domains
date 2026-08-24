@@ -8,6 +8,7 @@ const EnvSchema = z.object({
   WEASEL_URL: z.string().url().default("http://localhost:8781"),
   WOMBAT_URL: z.string().url().default("http://localhost:8782"),
   OTTER_URL: z.string().url().default("http://localhost:8784"),
+  DOVE_URL: z.string().url().default("http://localhost:8786"),
   PORT: z.coerce.number().int().positive().default(8787),
   SESSION_TTL_DAYS: z.coerce.number().int().positive().default(30),
   COOKIE_SECURE: z

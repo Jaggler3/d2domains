@@ -27,6 +27,12 @@ export class ProductionPipelineStack extends Stack {
     });
 
     const synthProject = new codebuild.PipelineProject(this, "SynthProject", {
+      role: new iam.Role(this, "SynthRole", {
+        assumedBy: new iam.ServicePrincipal("codebuild.amazonaws.com"),
+        managedPolicies: [
+          iam.ManagedPolicy.fromAwsManagedPolicyName("AdministratorAccess"),
+        ],
+      }),
       environment: {
         buildImage: codebuild.LinuxBuildImage.STANDARD_7_0,
         privileged: true,
