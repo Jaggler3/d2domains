@@ -1,4 +1,4 @@
-import type { RegistrySearchResult } from "../adapters/namecom";
+import type { RegistrySearchResult } from "../adapters/spaceship";
 
 export interface DomainSearchResult {
   domainName: string;

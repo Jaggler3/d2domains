@@ -21,7 +21,7 @@ const server = Bun.serve({
 });
 
 console.log(`heron (registry gateway) listening on :${env.HERON_PORT}`);
-console.log(`  upstream: ${env.NAME_COM_BASE}`);
+console.log(`  upstream: ${env.SPACESHIP_BASE}`);
 
 async function shutdown() {
   redis.disconnect();

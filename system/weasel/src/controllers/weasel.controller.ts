@@ -21,6 +21,7 @@ const createOrderSchema = z.object({
   priceCents: z.number().int().positive(),
   totalCents: z.number().int().positive().optional(),
   paymentMethodId: z.string().nullable().optional(),
+  registrantContactId: z.string().min(1).nullable().optional(),
   addons: z.array(addonSchema).optional().default([]),
   idempotencyKey: z.string().min(1),
 });
@@ -69,6 +70,7 @@ export const weaselController = {
         priceCents: parsed.data.priceCents,
         totalCents: parsed.data.totalCents ?? parsed.data.priceCents,
         paymentMethodId: parsed.data.paymentMethodId ?? null,
+        registrantContactId: parsed.data.registrantContactId ?? null,
         addons: parsed.data.addons,
         idempotencyKey: parsed.data.idempotencyKey,
       })

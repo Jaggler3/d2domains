@@ -100,6 +100,7 @@ export function createWeaselClient(config: { baseUrl: string; internalToken: str
       priceCents: number;
       totalCents: number;
       paymentMethodId?: string | null;
+      registrantContactId?: string | null;
       addons: AddonLine[];
       idempotencyKey: string;
     }) {

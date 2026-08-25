@@ -47,7 +47,7 @@ export class WorkloadStack extends Stack {
       CLIENT_ORIGIN: "http://d2domains.local",
       REDIS_URL: "redis://redis.d2domains.local:6379",
       INTERNAL_TOKEN: "d2d-internal-token-prod",
-      NAME_COM_BASE: "https://api.dev.name.com",
+      SPACESHIP_BASE: "https://api.spaceship.com",
     } as const;
 
     const clientImage = new ecrAssets.DockerImageAsset(this, "ClientImage", {
@@ -208,12 +208,11 @@ export class WorkloadStack extends Stack {
         };
       case "heron":
         return {
-          environment: {
-            NAME_COM_BASE: "https://api.dev.name.com",
-          },
+          environment: {},
           secrets: {
-            NAME_COM_USERNAME: ecs.Secret.fromSecretsManager(prodSecrets, "NAME_COM_USERNAME"),
-            NAME_COM_TOKEN: ecs.Secret.fromSecretsManager(prodSecrets, "NAME_COM_TOKEN"),
+            SPACESHIP_USERNAME: ecs.Secret.fromSecretsManager(prodSecrets, "SPACESHIP_USERNAME"),
+            SPACESHIP_TOKEN: ecs.Secret.fromSecretsManager(prodSecrets, "SPACESHIP_TOKEN"),
+            SPACESHIP_REGISTRANT_CONTACT_ID: ecs.Secret.fromSecretsManager(prodSecrets, "SPACESHIP_REGISTRANT_CONTACT_ID"),
           }
         };
       case "weasel":

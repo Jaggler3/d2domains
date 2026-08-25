@@ -2,9 +2,15 @@ import { z } from "zod";
 
 const EnvSchema = z.object({
   INTERNAL_TOKEN: z.string().min(1),
-  NAME_COM_USERNAME: z.string().min(1),
-  NAME_COM_TOKEN: z.string().min(1),
-  NAME_COM_BASE: z.string().url().default("https://api.dev.name.com"),
+  SPACESHIP_USERNAME: z.string().min(1),
+  SPACESHIP_TOKEN: z.string().min(1),
+  SPACESHIP_BASE: z.string().url().default("https://api.dev.spaceship.com"),
+  SPACESHIP_REGISTRANT_CONTACT_ID: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.string().min(1).optional(),
+  ),
+  TLD_PRICES: z.string().optional(),
+  DEFAULT_TLD_PRICE: z.coerce.number().positive().default(12.99),
   REDIS_URL: z.string().default("redis://localhost:6379"),
   HERON_PORT: z.coerce.number().int().positive().default(8783),
   REGISTRY_RATE_BURST: z.coerce.number().int().positive().default(20),

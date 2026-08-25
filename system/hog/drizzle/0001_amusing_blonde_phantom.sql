@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "registry_contact_id" text;

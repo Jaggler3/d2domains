@@ -6,10 +6,10 @@ Domain registrar-style product ("d2domains"). This file is the source of truth f
 
 ```
 d2d/
-  .env                     # top-level env, source of truth (name.com creds, per-service DB URLs)
-  docker-compose.yml       # dev stack: real name.com DEV API
+  .env                     # top-level env, source of truth (spaceship creds, per-service DB URLs)
+  docker-compose.yml       # dev stack: real spaceship DEV API
   docker-compose.mock.yml  # override: heron -> mockingbird (fake registry)
-  docker-compose.prod.yml  # override: real name.com PROD API, no-watch, restart policies
+  docker-compose.prod.yml  # override: real spaceship PROD API, no-watch, restart policies
   init/postgres/*.sql      # creates per-service DBs on fresh postgres volume
   client/                  # Next.js 16 (App Router), React 19, shadcn/ui (base-ui), Tailwind v4
   system/                  # backend microservices — ALL named after animals
@@ -24,13 +24,13 @@ Every service is a folder under `system/<animal>/`, runs on Bun, HTTP via Hono, 
 | Service | Port | Owns | Storage | Role |
 |---|---|---|---|---|
 | **hog** | 8787 | auth (users/sessions), BFF/API surface | Postgres `d2gres` | API gateway. Only thing the client talks to (via `src/proxy.ts`) |
-| **heron** | 8783 | registry integration | none (Redis for rate limiter) | ONLY service that talks to name.com. Retry/backoff, circuit breaker, normalization, token-bucket rate limit |
+| **heron** | 8783 | registry integration | none (Redis for rate limiter) | ONLY service that talks to spaceship. Retry/backoff, circuit breaker, normalization, token-bucket rate limit |
 | **weasel** | 8781 | domains + orders | Postgres `d2weasel` | Source of truth for what users own |
 | **wombat** | 8782 | payment methods, charges, ledger | Postgres `d2wombat` | Fake processor (configurable decline via `FAKE_PAYMENT_FAIL_MIN_CENTS`), idempotent by orderId, refunds, ledger entries |
 | **badger** | — | nothing (stateless worker) | none | BullMQ `purchases` consumer: charge → register → create domain → mark purchased |
 | **beaver** | — | nothing (stateless worker) | sqlite `search_logs` | BullMQ `domains-jobs` consumer (search analytics) |
-| **mockingbird** | 8890 | fake name.com | sqlite | Implements name.com v4 API (search/checkAvailability/create/DNS) for mock compose |
-| **otter** | 8784 | DNS zones + records | Postgres `d2otter` | Source of truth for DNS; syncs to name.com via heron |
+| **mockingbird** | 8890 | fake spaceship | sqlite | Implements spaceship v1 API (X-Api-Key/X-Api-Secret, async registrations) for mock compose |
+| **otter** | 8784 | DNS zones + records | Postgres `d2otter` | Source of truth for DNS; syncs to spaceship via heron |
 | **pigeon** | — (worker-only) | email add-on provisioning | Postgres `d2pigeon` | BullMQ `email-jobs` consumer: mailbox + MX/SPF/DKIM/DMARC records for purchased orders; idempotent by orderId |
 
 ### Storage rule (important)
@@ -48,7 +48,9 @@ Durable production data = **Postgres** (one instance, one DB per service). **sql
 
 ## Environment keys (top-level .env)
 
-- `NAME_COM_USERNAME`, `NAME_COM_TOKEN`, `NAME_COM_BASE` — used by heron/mockingbird. Dev = `https://api.dev.name.com`, prod = `https://api.name.com`. Note: the dev token is slow to become valid after creation.
+- `SPACESHIP_USERNAME`, `SPACESHIP_TOKEN`, `SPACESHIP_BASE` — used by heron/mockingbird as API key/secret (headers `X-Api-Key`/`X-Api-Secret`). Dev = `https://api.dev.spaceship.com`, prod = `https://api.spaceship.com`. Note: the dev token is slow to become valid after creation.
+- `SPACESHIP_REGISTRANT_CONTACT_ID` (optional, heron) — fallback registrant contact id. Registrations normally use a **per-user contact**: hog lazily creates it at first buy (derives identity from the user's email via `lib/contact-identity.ts` + placeholder address/phone — real address collection is future work), stores it on `users.registry_contact_id`, and passes it through weasel orders (`registrantContactId`) so badger forwards it to heron `/v1/register`. heron `POST /v1/contacts` proxies spaceship `PUT /v1/contacts`.
+- `TLD_PRICES` (heron, optional JSON object like `{"com":12.99}`) + `DEFAULT_TLD_PRICE` (default 12.99) — spaceship v1 only exposes pricing for premium domains (`premiumPricing`); standard TLD retail prices come from this catalog when availability says available without premium pricing. Premium prices stay authoritative from the registry.
 - `DATABASE_URL` (hog d2gres), `WEASEL_DATABASE_URL`, `WOMBAT_DATABASE_URL`, `OTTER_DATABASE_URL`, `PIGEON_DATABASE_URL`
 - Service URLs default in code: `REGISTRY_URL=http://localhost:8783`, `WEASEL_URL=http://localhost:8781`, `WOMBAT_URL=http://localhost:8782`, `OTTER_URL=http://localhost:8784`, `PIGEON_URL=http://localhost:8785`, `HOG_URL=http://localhost:8787` (client)
 - Rate limiting: heron `REGISTRY_RATE_BURST`/`REGISTRY_RATE_REFILL` (token bucket); hog `SEARCH_RATE_LIMIT_PER_MINUTE` (per-IP)
@@ -56,18 +58,18 @@ Durable production data = **Postgres** (one instance, one DB per service). **sql
 ## Data flow / key behaviors
 
 - **Auth**: DB-backed opaque sessions, httpOnly cookie `hog_session`, argon2id via `Bun.password`. Cookie set by hog; client proxies so it stays first-party. Client server-side session helpers in `client/src/lib/session.ts` fetch hog directly with the cookie (`getCurrentUser`, `getMyDomains`, `getMyOrders`) wrapped in React `cache()`.
-- **Search**: public. client → hog `POST /api/v1/domains/search` → Redis cache (key `domain:search:{keyword}:{tlds}`) → heron `/v1/search` → name.com. Results normalized to a stable DTO: `purchasable`, `premium`, `purchasePrice`/`renewalPrice` (null when unavailable), `purchaseType`. name.com omits fields for unavailable domains; normalize so the client contract is stable. **Search cache is cleared on buy** (`clearSearchCache`).
-- **Buy**: `POST /api/v1/domains/buy` (auth) → `checkAvailability` for authoritative price/type (never trust client price) → order in weasel (idempotency key `user:domain`, pending; `priceCents` = registry amount, `totalCents` = domain + add-ons, `addons` jsonb line items, `paymentMethodId`) → enqueue `purchases` → `202 {order}`. badger: charge wombat `totalCents` + paymentMethodId → register at heron `/v1/register` (purchasePrice + purchaseType; 409/400 = terminal → order failed, transient = BullMQ backoff) → create domain in weasel (expiresAt = now + years) → mark order purchased. When the order has an email add-on, hog also enqueues `email-jobs` at buy time.
+- **Search**: public. client → hog `POST /api/v1/domains/search` → Redis cache (key `domain:search:{keyword}:{tlds}`) → heron `/v1/search` → spaceship. Results normalized to a stable DTO: `purchasable`, `premium`, `purchasePrice`/`renewalPrice` (null when unavailable), `purchaseType`. spaceship omits fields for unavailable domains; normalize so the client contract is stable. **Search cache is cleared on buy** (`clearSearchCache`).
+- **Buy**: `POST /api/v1/domains/buy` (auth) → `checkAvailability` for authoritative price/type (never trust client price) → ensure per-user registrant contact (hog `ensureRegistrantContact`) → order in weasel (idempotency key `user:domain`, pending; `priceCents` = registry amount, `totalCents` = domain + add-ons, `addons` jsonb line items, `paymentMethodId`, `registrantContactId`) → enqueue `purchases` → `202 {order}`. badger: charge wombat `totalCents` + paymentMethodId → register at heron `/v1/register` (purchasePrice + purchaseType + registrantContactId; 409/400 = terminal → order failed, transient = BullMQ backoff) → create domain in weasel (expiresAt = now + years) → mark order purchased. When the order has an email add-on, hog also enqueues `email-jobs` at buy time.
 - **Email provisioning**: pigeon (`email-jobs` consumer) fetches the order → waits until `purchased` (pending = retry, failed = never provision) → for each email add-on: record provisioning state in `d2pigeon` (keyed by orderId), create `admin@<domain>` mailbox, write MX `@` / TXT `@` SPF / TXT `_dkim` / TXT `_dmarc` through otter (skipping records that already exist) → mark provisioned. Replayed jobs no-op. Placeholder record values live in pigeon env (`MAIL_HOST`, `MAIL_SPF_TXT`, `MAIL_DKIM_TXT`, `MAIL_DMARC_TXT`) — no real mail infra yet; swap in a provider later.
 - **Dashboard**: `/account` (server component) renders domains + pending/failed orders from `getMyDomains()`/`getMyOrders()`.
-- **DNS**: `/account/[domainName]` detail page → hog `GET/POST/PATCH/DELETE /api/v1/domains/:name/dns` (ownership checked via weasel) → otter (source of truth, Postgres) → local write + enqueue `dns-sync` job → otter in-process worker → heron `/v1/dns/:domain/records` → name.com. Records have `syncStatus` pending|synced|error and `registryRecordId`. First view pulls/imports existing name.com records.
-- **Registrar settings**: `/api/v1/domains/:name/settings` GET/PATCH (ownership checked via weasel) → heron `/v1/domains/:name` + toggle/setNameservers endpoints → name.com (autorenew, whois privacy, transfer lock, nameservers). hog maps settings patch fields to heron `{enabled}`/`{nameservers}` payloads.
+- **DNS**: `/account/[domainName]` detail page → hog `GET/POST/PATCH/DELETE /api/v1/domains/:name/dns` (ownership checked via weasel) → otter (source of truth, Postgres) → local write + enqueue `dns-sync` job → otter in-process worker → heron `/v1/dns/:domain/records` → spaceship. Records have `syncStatus` pending|synced|error and `registryRecordId`. First view pulls/imports existing spaceship records.
+- **Registrar settings**: `/api/v1/domains/:name/settings` GET/PATCH (ownership checked via weasel) → heron `/v1/domains/:name` + toggle/setNameservers endpoints → spaceship (autorenew, whois privacy, transfer lock, nameservers). hog maps settings patch fields to heron `{enabled}`/`{nameservers}` payloads.
 - **Queues**: BullMQ + Redis. `domains-jobs` (beaver), `purchases` (badger), `dns-sync` (otter), `email-jobs` (pigeon). Queues are for async writes only — sync request-path reads use cache + rate limiting, never queues.
 
 ## Docker compose
 
-- Default (`docker-compose.yml`) = dev against real name.com dev API. `docker compose up --build --watch` hot-reloads (compose sync + `bun --watch`); use `--build` so newly-committed code is in the image, not just the stale one.
-- Mock: `docker compose -f docker-compose.yml -f docker-compose.mock.yml up --watch` — only heron's upstream changes (`NAME_COM_BASE: http://mockingbird:8890`), consumers still point at heron.
+- Default (`docker-compose.yml`) = dev against real spaceship dev API. `docker compose up --build --watch` hot-reloads (compose sync + `bun --watch`); use `--build` so newly-committed code is in the image, not just the stale one.
+- Mock: `docker compose -f docker-compose.yml -f docker-compose.mock.yml up --watch` — only heron's upstream changes (`SPACESHIP_BASE: http://mockingbird:8890`), consumers still point at heron.
 - Prod: `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build` — non-watch commands, `restart: unless-stopped`, `COOKIE_SECURE: "true"`, prod creds from .env.
 - Postgres runs init scripts only on a **fresh** volume (`init/postgres/01-create-dbs.sql`). If a `d2d_pgdata` volume predates a new DB, `docker compose down -v` to re-init.
 - Ports on host: postgres 5433, redis 6380 (avoid clashing with local postgres/redis on 5432/6379).
@@ -89,7 +91,7 @@ Durable production data = **Postgres** (one instance, one DB per service). **sql
 
 ## Direction / roadmap
 
-Completed: login, public search, buy flow, dashboard, DNS management (otter + sync to name.com via heron, domain detail page), registrar settings (autorenew, whois privacy, transfer lock, nameservers).
+Completed: login, public search, buy flow, dashboard, DNS management (otter + sync to spaceship via heron, domain detail page), registrar settings (autorenew, whois privacy, transfer lock, nameservers).
 Hardening (done): internal-auth token (`x-internal-token`, `INTERNAL_TOKEN` env) enforced on heron/weasel/wombat/otter and sent by hog/badger/otter; worker saga tests (badger purchase, otter dns-sync via `createSyncProcessor`); request-id propagation (`x-request-id` through hog→weasel/otter/heron) + structured JSON request logs + hog `/metrics` (Prometheus text); DNS-sync idempotency (reconcile-adopt on duplicate create).
 Billing depth (done): wombat payment methods (CRUD + default), charge lifecycle (pending→succeeded/failed/refunded) behind a `PaymentProcessor` interface with a fake processor that declines charges ≥ `FAKE_PAYMENT_FAIL_MIN_CENTS` (0 = never), refunds, and a `ledger_entries` audit log. badger treats a declined charge as terminal (order failed). Real provider (Stripe) = a new `PaymentProcessor` impl.
 Client polish (done): order history page (`/account/orders`), whois/registrant contacts on the domain detail page, per-user rate limits on DNS/settings (namespaced buckets), per-domain search-cache invalidation on buy.
@@ -102,8 +104,9 @@ Long-term product goals: sell/include **email services** and **hosting services*
 ## Gotchas / history
 
 - `docker compose up --watch` runs whatever is in the image; if the image predates newly-committed code, containers serve stale routes/endpoints (symptom: 404s that work when you test the service directly). Rebuild with `docker compose up --build --watch`. `--build` only matters on `up`, not while watching — source edits hot-reload via sync + `bun --watch`, and `package.json` changes trigger a rebuild action.
-- name.com returns `{}` (no `records` key) for a domain with no DNS records — not `{records: []}`. heron/otter handle it defensively; mockingbird mirrors the quirk so mock dev exercises the same path.
-- name.com dev token was dead initially → mockingbird was built as a drop-in. Test buys against mockingbird; real-dev-API buys attempt real sandbox registrations.
+- spaceship v1 DNS is a bulk model: `GET/PUT/DELETE /v1/dns/records/{domain}` with `{items:[...]}` — there are no registry record IDs. heron synthesizes ids (base64url of type/name/value/ttl/priority) so otter's per-record CRUD contract stays stable; update = delete-match + re-save.
+- spaceship registrations are async: `POST /v1/domains/{domain}` → 202 + `spaceship-async-operationid` header, polled via `GET /v1/async-operations/{id}`. heron polls until success/failed before returning to badger.
+- spaceship dev token was dead initially → mockingbird was built as a drop-in. Test buys against mockingbird; real-dev-API buys attempt real sandbox registrations.
 - Redis search cache served stale availability across registry-source switches → cache key later included the source, then became source-agnostic again once heron was the single entry point; buy clears the cache.
 - `attempts`/`backoff` are BullMQ **job** options (queue.add), not Worker options (v6).
 - Swallowed fetch errors in client buy flows caused "purchase forgotten" bugs — always surface via `buyDomain()` and show pending orders.

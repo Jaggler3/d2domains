@@ -170,7 +170,7 @@ export function DomainSettings({ domainName }: { domainName: string }) {
               id="nameservers"
               value={nameservers}
               onChange={(e) => setNameservers(e.target.value)}
-              placeholder="ns1.name.com, ns2.name.com"
+               placeholder="ns1.spaceship.com, ns2.spaceship.com"
               className="h-8"
               disabled={busy}
             />

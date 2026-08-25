@@ -4,7 +4,7 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { createRegistryRouter } from "./web-routers/registry";
 import { requireInternalToken } from "./middleware/internal-auth";
 import { HeronError } from "./controllers/registry.controller";
-import { RegistryError } from "./adapters/namecom";
+import { RegistryError } from "./adapters/spaceship";
 import type { Redis } from "ioredis";
 
 export function createApp(redis: Redis, internalToken: string) {

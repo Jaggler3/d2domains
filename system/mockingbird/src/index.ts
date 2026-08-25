@@ -1,17 +1,12 @@
 import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
-import {
-  checkCandidates,
-  DEFAULT_TLDS,
-  hashState,
-  searchCandidates,
-} from "./lib";
+import { basePrice, hashState } from "./lib";
 
 const env = {
   port: Number(Bun.env.MOCK_PORT ?? 8890),
   latencyMs: Number(Bun.env.MOCK_LATENCY_MS ?? 50),
-  username: Bun.env.NAME_COM_USERNAME ?? "",
-  token: Bun.env.NAME_COM_TOKEN ?? "",
+  apiKey: Bun.env.SPACESHIP_USERNAME ?? "",
+  apiSecret: Bun.env.SPACESHIP_TOKEN ?? "",
 };
 
 const DATA_DIR = "./data";
@@ -46,7 +41,7 @@ const SEED_TAKEN = [
   "apple.com",
   "amazon.com",
   "github.com",
-  "name.com",
+  "spaceship.com",
   "microsoft.com",
   "openai.com",
 ];
@@ -70,7 +65,7 @@ function isTaken(domain: string): boolean {
   return findDomain.get(domain) !== null;
 }
 
-function recordShape(row: {
+interface DnsRow {
   id: string;
   domain_name: string;
   type: string;
@@ -78,37 +73,130 @@ function recordShape(row: {
   answer: string;
   ttl: number;
   priority: number | null;
-}) {
-  // name.com omits `host` for root (@) records, keeping only fqdn
-  const base = {
-    id: row.id,
-    type: row.type,
-    fqdn: row.host === "@" ? row.domain_name : `${row.host}.${row.domain_name}`,
-    answer: row.answer,
+}
+
+function valueKeyForType(type: string): string {
+  switch (type.toUpperCase()) {
+    case "A":
+    case "AAAA":
+      return "address";
+    case "CNAME":
+    case "NS":
+    case "MX":
+      return "host";
+    default:
+      return "value";
+  }
+}
+
+function rowToItem(row: DnsRow): Record<string, unknown> {
+  const item: Record<string, unknown> = {
+    type: row.type.toUpperCase(),
+    name: row.host,
     ttl: row.ttl,
-    priority: row.priority,
   };
-  return row.host === "@" ? base : { ...base, host: row.host };
+  item[valueKeyForType(row.type)] = row.answer;
+  if (row.priority !== null && row.priority !== undefined) {
+    item.priority = row.priority;
+  }
+  return item;
+}
+
+function extractAnswer(item: Record<string, unknown>): string {
+  const keys = [
+    valueKeyForType(String(item.type ?? "")),
+    ...["address", "host", "value", "data", "target", "answer"],
+  ];
+  for (const key of keys) {
+    const v = item[key];
+    if (typeof v === "string" && v.length > 0) return v;
+  }
+  return "";
+}
+
+function normalizeItem(raw: unknown): Record<string, unknown> | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const item = raw as Record<string, unknown>;
+  const type = String(item.type ?? "").toUpperCase();
+  if (!type) return null;
+  return item;
+}
+
+function valuesMatch(
+  type: string,
+  a: string,
+  b: string,
+): boolean {
+  if (type.toUpperCase() === "TXT") return a === b;
+  return a.toLowerCase() === b.toLowerCase();
 }
 
 const listRecords = db.prepare(
   "SELECT * FROM dns_records WHERE domain_name = ? ORDER BY type, host",
 );
-const findRecord = db.prepare(
-  "SELECT * FROM dns_records WHERE id = ? AND domain_name = ?",
-);
 const insertRecord = db.prepare(
   "INSERT INTO dns_records (id, domain_name, type, host, answer, ttl, priority) VALUES (?, ?, ?, ?, ?, ?, ?)",
 );
-const updateRecord = db.prepare(
-  "UPDATE dns_records SET type = ?, host = ?, answer = ?, ttl = ?, priority = ? WHERE id = ? AND domain_name = ?",
+const updateRecordTtl = db.prepare(
+  "UPDATE dns_records SET ttl = ?, priority = ? WHERE id = ?",
 );
-const deleteRecord = db.prepare(
+const deleteRecordById = db.prepare(
   "DELETE FROM dns_records WHERE id = ? AND domain_name = ?",
 );
 
-const DOMAIN_RECORDS_RE = /^\/v4\/domains\/([^/]+)\/records(?:\/([^/]+))?$/;
-const DOMAIN_ACTION_RE = /^\/v4\/domains\/([^/]+):(\w+)$/;
+interface AvailabilityItem {
+  domain: string;
+  result: "available" | "unavailable";
+  premiumPricing?: { operation: string; price: number; currency: string }[];
+}
+
+function availabilityFor(domainName: string): AvailabilityItem {
+  const lowered = domainName.toLowerCase();
+  const dot = lowered.lastIndexOf(".");
+  const sld = dot > 0 ? lowered.slice(0, dot) : lowered;
+  const tld = dot > 0 ? lowered.slice(dot + 1) : "";
+  const registeredRow = findDomain.get(lowered) as
+    | { available: number; price: number }
+    | null;
+  const taken =
+    registeredRow !== null || hashState(sld, tld) === "taken" || tld === "";
+  if (taken) return { domain: lowered, result: "unavailable" };
+  if (registeredRow === null && hashState(sld, tld) === "premium") {
+    return {
+      domain: lowered,
+      result: "available",
+      premiumPricing: [
+        {
+          operation: "register",
+          price: Math.round(basePrice(tld) * 15 * 100) / 100,
+          currency: "USD",
+        },
+      ],
+    };
+  }
+  return { domain: lowered, result: "available" };
+}
+
+const MOCK_CONTACT_ID = "mockcontactid000000000000000";
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS contacts (
+    contact_id TEXT PRIMARY KEY,
+    email TEXT NOT NULL UNIQUE,
+    first_name TEXT NOT NULL,
+    last_name TEXT NOT NULL
+  );
+`);
+const findContactByEmail = db.prepare(
+  "SELECT contact_id FROM contacts WHERE email = ?",
+);
+const insertContact = db.prepare(
+  "INSERT INTO contacts (contact_id, email, first_name, last_name) VALUES (?, ?, ?, ?)",
+);
+
+function mockContactId(): string {
+  return ("c" + crypto.randomUUID().replace(/-/g, "")).slice(0, 32);
+}
 
 function domainShape(row: {
   domain_name: string;
@@ -119,301 +207,393 @@ function domainShape(row: {
   locked: string | null;
   nameservers: string | null;
 }) {
-  const price = Number(row.price);
-  const contact = (kind: string) => ({
-    firstName: "Jane",
-    lastName: "Doe",
-    organization: `${kind} Contact`,
-    address1: "123 Main St.",
-    city: "Denver",
-    state: "CO",
-    country: "US",
-    phone: "+1.3035551212",
-    email: `admin@${row.domain_name}`,
-  });
+  const hosts = row.nameservers
+    ? (JSON.parse(row.nameservers) as string[])
+    : ["ns1.spaceship.com", "ns2.spaceship.com"];
+  const locked = row.locked === null ? true : row.locked === "1";
   return {
-    domainName: row.domain_name,
-    nameservers: row.nameservers
-      ? (JSON.parse(row.nameservers) as string[])
-      : ["ns1.name.com", "ns2.name.com"],
-    privacyEnabled: row.privacy === "1",
-    locked: row.locked === null ? true : row.locked === "1",
-    autorenewEnabled: row.autorenew === null ? true : row.autorenew === "1",
-    expireDate: new Date(Date.now() + 365 * 86400_000).toISOString(),
-    createDate: row.reserved_at ?? new Date().toISOString(),
-    renewalPrice: price,
+    name: row.domain_name,
+    unicodeName: row.domain_name,
+    isPremium: Number(row.price) > 100,
+    autoRenew: row.autorenew === null ? true : row.autorenew === "1",
+    registrationDate: row.reserved_at ?? new Date().toISOString(),
+    expirationDate: new Date(Date.now() + 365 * 86400_000).toISOString(),
+    lifecycleStatus: "registered",
+    verificationStatus: "success",
+    eppStatuses: locked ? ["clientTransferProhibited"] : ["ok"],
+    privacyProtection: {
+      contactForm: true,
+      level: row.privacy === "1" ? "high" : "public",
+    },
+    nameservers: { provider: "custom", hosts },
     contacts: {
-      registrant: contact("Registrant"),
-      admin: contact("Admin"),
-      tech: contact("Tech"),
-      billing: contact("Billing"),
+      registrant: MOCK_CONTACT_ID,
+      admin: MOCK_CONTACT_ID,
+      tech: MOCK_CONTACT_ID,
+      billing: MOCK_CONTACT_ID,
     },
   };
 }
 
-const findDomainRow = db.prepare(
-  "SELECT * FROM domains WHERE domain_name = ?",
-);
+const findDomainRow = db.prepare("SELECT * FROM domains WHERE domain_name = ?");
+
+interface AsyncOperation {
+  id: string;
+  status: "pending" | "success" | "failed";
+  type: string;
+  details: Record<string, unknown>;
+  createdAt: string;
+  modifiedAt: string;
+}
+
+const asyncOperations = new Map<string, AsyncOperation>();
 
 function authorized(request: Request): boolean {
-  const header = request.headers.get("authorization") ?? "";
-  const expected = `Basic ${Buffer.from(`${env.username}:${env.token}`).toString("base64")}`;
-  return header === expected;
+  const key = request.headers.get("x-api-key") ?? "";
+  const secret = request.headers.get("x-api-secret") ?? "";
+  return key === env.apiKey && secret === env.apiSecret;
 }
 
 function unauthorized(): Response {
-  return Response.json({ message: "Unauthorized" }, { status: 401 });
+  return Response.json({ detail: "Unauthorized" }, { status: 401 });
 }
 
-async function readJson(request: Request): Promise<Record<string, unknown>> {
+async function readJson(request: Request): Promise<unknown> {
   const text = await request.text();
   if (!text) return {};
   try {
-    return JSON.parse(text) as Record<string, unknown>;
+    return JSON.parse(text);
   } catch {
-    throw new Response(JSON.stringify({ message: "Invalid JSON" }), {
-      status: 400,
-      headers: { "content-type": "application/json" },
-    });
+    throw Response.json({ detail: "Invalid JSON" }, { status: 400 });
   }
+}
+
+function problem(detail: string, status: number): Response {
+  return Response.json({ detail }, { status });
+}
+
+function notFound(): Response {
+  return Response.json({ message: "Not Found" }, { status: 404 });
 }
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+const ASYNC_ROUTE_RE = /^\/v1\/async-operations\/([^/]+)$/;
+const AVAILABLE_SINGLE_RE = /^\/v1\/domains\/([^/]+)\/available$/;
+const DOMAIN_ROUTE_RE = /^\/v1\/domains\/([^/]+)$/;
+const DNS_RECORDS_RE = /^\/v1\/dns\/records\/([^/]+)$/;
+const DOMAIN_SETTING_RE = /^\/v1\/domains\/([^/]+)\/(autorenew|nameservers|privacy\/preference|privacy\/email-protection-preference|transfer\/lock)$/;
+
+function isRegistryCall(pathname: string): boolean {
+  return (
+    pathname === "/v1/domains/available" ||
+    pathname === "/v1/contacts" ||
+    AVAILABLE_SINGLE_RE.test(pathname) ||
+    DOMAIN_ROUTE_RE.test(pathname) ||
+    DNS_RECORDS_RE.test(pathname) ||
+    ASYNC_ROUTE_RE.test(pathname) ||
+    DOMAIN_SETTING_RE.test(pathname)
+  );
+}
+
 const server = Bun.serve({
   port: env.port,
   async fetch(request) {
     const url = new URL(request.url);
+    const pathname = url.pathname;
 
-    if (url.pathname === "/healthz") {
+    if (pathname === "/healthz") {
       return Response.json({ status: "ok" });
     }
-    const isRegistryCall =
-      url.pathname === "/v4/domains:search" ||
-      url.pathname === "/v4/domains:checkAvailability" ||
-      url.pathname === "/v4/domains" ||
-      DOMAIN_RECORDS_RE.test(url.pathname) ||
-      DOMAIN_ACTION_RE.test(url.pathname) ||
-      /^\/v4\/domains\/[^/]+$/.test(url.pathname);
-    if (!isRegistryCall) {
-      return Response.json({ message: "Not Found" }, { status: 404 });
-    }
+    if (!isRegistryCall(pathname)) return notFound();
     if (!authorized(request)) return unauthorized();
 
     if (env.latencyMs > 0) await sleep(env.latencyMs);
 
     try {
-      if (url.pathname === "/v4/domains:search") {
-        const body = await readJson(request);
-        const keyword = String(body.keyword ?? "").trim().toLowerCase();
-        if (!keyword) {
-          return Response.json({ message: "keyword is required" }, { status: 400 });
+      if (pathname === "/v1/domains/available" && request.method === "POST") {
+        const body = (await readJson(request)) as { domains?: unknown };
+        if (!Array.isArray(body.domains) || body.domains.length === 0) {
+          return problem("domains must be a non-empty array", 400);
         }
-        const tldFilter = Array.isArray(body.tldFilter)
-          ? (body.tldFilter as string[]).map((t) => t.replace(/^\./, "").toLowerCase())
-          : [];
-        const tlds = tldFilter.length > 0 ? tldFilter : [...DEFAULT_TLDS];
-        const results = searchCandidates(keyword, tlds, isTaken);
-        return Response.json({ results });
+        if (body.domains.length > 20) {
+          return problem("domains accepts at most 20 entries", 422);
+        }
+        const items = body.domains
+          .filter((d): d is string => typeof d === "string")
+          .map(availabilityFor);
+        return Response.json({ domains: items });
       }
 
-      if (url.pathname === "/v4/domains:checkAvailability") {
-        const body = await readJson(request);
-        const domainNames = Array.isArray(body.domainNames)
-          ? (body.domainNames as string[]).slice(0, 50)
-          : [];
-        const results = checkCandidates(domainNames, isTaken);
-        return Response.json({ results });
+      const singleAvailable = AVAILABLE_SINGLE_RE.exec(pathname);
+      if (singleAvailable && request.method === "GET") {
+        return Response.json(availabilityFor(singleAvailable[1]!));
       }
 
-      if (url.pathname === "/v4/domains" && request.method === "POST") {
-        const body = await readJson(request);
-        const domainName = String((body.domain as { domainName?: string } | undefined)?.domainName ?? "")
-          .toLowerCase();
-        if (!domainName) {
-          return Response.json({ message: "domain is required" }, { status: 400 });
+      if (pathname === "/v1/contacts" && request.method === "PUT") {
+        const body = (await readJson(request)) as Record<string, unknown>;
+        for (const field of [
+          "firstName",
+          "lastName",
+          "email",
+          "address1",
+          "city",
+          "country",
+          "phone",
+        ]) {
+          if (typeof body[field] !== "string" || (body[field] as string).length === 0) {
+            return problem(`${field} is required`, 422);
+          }
         }
-        const existing = findDomain.get(domainName);
+        const country = String(body.country);
+        if (!/^[A-Z]{2}$/.test(country)) {
+          return problem("country must be an ISO 3166-1 alpha-2 code", 422);
+        }
+        const phone = String(body.phone);
+        if (!/^\+\d{1,3}\.\d{4,}$/.test(phone)) {
+          return problem("phone must match +<cc>.<number>", 422);
+        }
+        const email = String(body.email).toLowerCase();
+        const existing = findContactByEmail.get(email) as
+          | { contact_id: string }
+          | null;
         if (existing) {
-          return Response.json({ message: "domain already taken" }, { status: 409 });
+          return Response.json({ contactId: existing.contact_id });
+        }
+        const contactId = mockContactId();
+        insertContact.run(
+          contactId,
+          email,
+          String(body.firstName),
+          String(body.lastName),
+        );
+        return Response.json({ contactId });
+      }
+
+      const asyncMatch = ASYNC_ROUTE_RE.exec(pathname);
+      if (asyncMatch && request.method === "GET") {
+        const op = asyncOperations.get(asyncMatch[1]!);
+        if (!op) return problem("operation not found", 404);
+        if (op.status === "pending") {
+          op.status = "success";
+          op.modifiedAt = new Date().toISOString();
+        }
+        return Response.json(op);
+      }
+
+      const domainRoute = DOMAIN_ROUTE_RE.exec(pathname);
+      if (domainRoute && request.method === "POST") {
+        const domainName = domainRoute[1]!.toLowerCase();
+        const body = (await readJson(request)) as Record<string, unknown>;
+        if (typeof body.years !== "number" || body.years < 1 || body.years > 10) {
+          return problem("years must be an integer between 1 and 10", 422);
+        }
+        if (typeof body.autoRenew !== "boolean") {
+          return problem("autoRenew is required", 422);
+        }
+        const privacy = body.privacyProtection as
+          | { level?: unknown; userConsent?: unknown }
+          | undefined;
+        if (
+          !privacy ||
+          (privacy.level !== "high" && privacy.level !== "public") ||
+          privacy.userConsent !== true
+        ) {
+          return problem("privacyProtection requires level and userConsent=true", 422);
+        }
+        const contacts = body.contacts as { registrant?: unknown } | undefined;
+        if (!contacts || typeof contacts.registrant !== "string") {
+          return problem("contacts.registrant is required", 422);
+        }
+        if (findDomain.get(domainName)) {
+          return problem("domain already exists", 409);
         }
         const dot = domainName.lastIndexOf(".");
-        const sld = dot > 0 ? domainName.slice(0, dot) : domainName;
         const tld = dot > 0 ? domainName.slice(dot + 1) : "";
-        const price = Number(body.purchasePrice ?? (hashState(sld, tld) === "premium" ? 100 : 12.99));
+        const premium = hashState(
+          dot > 0 ? domainName.slice(0, dot) : domainName,
+          tld,
+        ) === "premium";
+        const price = premium ? basePrice(tld) * 15 : basePrice(tld);
         db.prepare(
-          "INSERT INTO domains (domain_name, available, price, reserved_at, autorenew, privacy, locked, nameservers) VALUES (?, 0, ?, ?, '1', '0', '1', ?)",
-        ).run(domainName, price, new Date().toISOString(), JSON.stringify(["ns1.name.com", "ns2.name.com"]));
-        insertRecord.run(
-          crypto.randomUUID(),
+          "INSERT INTO domains (domain_name, available, price, reserved_at, autorenew, privacy, locked, nameservers) VALUES (?, 0, ?, ?, ?, ?, '1', ?)",
+        ).run(
           domainName,
-          "A",
-          "@",
-          "192.0.2.1",
-          3600,
-          null,
+          Math.round(price * 100) / 100,
+          new Date().toISOString(),
+          body.autoRenew ? "1" : "0",
+          privacy.level === "high" ? "1" : "0",
+          JSON.stringify(["ns1.spaceship.com", "ns2.spaceship.com"]),
         );
+        insertRecord.run(crypto.randomUUID(), domainName, "A", "@", "192.0.2.1", 3600, null);
+        const opId = crypto.randomUUID();
+        const now = new Date().toISOString();
+        asyncOperations.set(opId, {
+          id: opId,
+          status: "pending",
+          type: "domains_Create",
+          details: { domainName },
+          createdAt: now,
+          modifiedAt: now,
+        });
         return Response.json(
+          {},
           {
-            domain: {
-              domainName,
-              locked: true,
-              autorenewEnabled: true,
-              expireDate: new Date(Date.now() + 365 * 86400_000).toISOString(),
-              createDate: new Date().toISOString(),
-              renewalPrice: price,
-            },
-            order: Math.floor(Math.random() * 1_000_000),
-            totalPaid: price,
+            status: 202,
+            headers: { "spaceship-async-operationid": opId },
           },
-          { status: 201 },
         );
       }
 
-      const dnsMatch = DOMAIN_RECORDS_RE.exec(url.pathname);
+      const dnsMatch = DNS_RECORDS_RE.exec(pathname);
       if (dnsMatch) {
         const domain = dnsMatch[1]!.toLowerCase();
-        const recordId = dnsMatch[2];
-        if (!isTaken(domain)) {
-          return Response.json({ message: "domain not found" }, { status: 404 });
+        if (!isTaken(domain)) return problem("domain not found", 404);
+
+        if (request.method === "GET") {
+          const take = Math.min(
+            Math.max(Number(url.searchParams.get("take") ?? 500), 1),
+            500,
+          );
+          const skip = Math.max(Number(url.searchParams.get("skip") ?? 0), 0);
+          const rows = listRecords.all(domain) as DnsRow[];
+          const items = rows.slice(skip, skip + take).map(rowToItem);
+          return Response.json({ items, total: rows.length });
         }
 
-        if (url.pathname === `/v4/domains/${domain}/records` && request.method === "GET") {
-          const rows = listRecords.all(domain) as {
-            id: string; domain_name: string; type: string; host: string; answer: string; ttl: number; priority: number | null;
-          }[];
-          const records = rows.map(recordShape);
-          // name.com returns bare {} when a domain has no records, not {records: []}
-          return Response.json(records.length === 0 ? {} : { records });
+        if (request.method === "PUT") {
+          const body = (await readJson(request)) as { items?: unknown };
+          if (!Array.isArray(body.items) || body.items.length === 0) {
+            return problem("items must be a non-empty array", 400);
+          }
+          for (const raw of body.items) {
+            const item = normalizeItem(raw);
+            if (!item) return problem("invalid resource record item", 422);
+            const type = String(item.type).toUpperCase();
+            const name = String(item.name ?? "@").toLowerCase();
+            const answer = extractAnswer(item);
+            if (!answer) return problem("record value is required", 422);
+            const ttl = typeof item.ttl === "number" ? item.ttl : 3600;
+            const priority =
+              typeof item.priority === "number" ? item.priority : null;
+            const existing = (listRecords.all(domain) as DnsRow[]).find(
+              (r) =>
+                r.type.toUpperCase() === type &&
+                r.host.toLowerCase() === name &&
+                valuesMatch(type, r.answer, answer),
+            );
+            if (existing) {
+              updateRecordTtl.run(ttl, priority, existing.id);
+            } else {
+              insertRecord.run(crypto.randomUUID(), domain, type, name, answer, ttl, priority);
+            }
+          }
+          return new Response(null, { status: 204 });
         }
 
-        if (url.pathname === `/v4/domains/${domain}/records` && request.method === "POST") {
+        if (request.method === "DELETE") {
           const body = await readJson(request);
-          const type = String(body.type ?? "").toUpperCase();
-          const host = String(body.host ?? "@").toLowerCase();
-          const answer = String(body.answer ?? "");
-          const ttl = Number(body.ttl ?? 3600);
-          const priority = body.priority === undefined || body.priority === null ? null : Number(body.priority);
-          if (!type || !answer) {
-            return Response.json({ message: "type and answer are required" }, { status: 400 });
+          const items = Array.isArray(body) ? body : [];
+          for (const raw of items) {
+            const item = normalizeItem(raw);
+            if (!item) continue;
+            const type = String(item.type).toUpperCase();
+            const name = String(item.name ?? "@").toLowerCase();
+            const answer = extractAnswer(item);
+            const matches = (listRecords.all(domain) as DnsRow[]).filter(
+              (r) =>
+                r.type.toUpperCase() === type &&
+                r.host.toLowerCase() === name &&
+                (answer ? valuesMatch(type, r.answer, answer) : true),
+            );
+            for (const m of matches) deleteRecordById.run(m.id, domain);
           }
-          const id = crypto.randomUUID();
-          insertRecord.run(id, domain, type, host, answer, ttl, priority);
-          const row = findRecord.get(id, domain) as {
-            id: string; domain_name: string; type: string; host: string; answer: string; ttl: number; priority: number | null;
-          };
-          return Response.json({ record: recordShape(row) }, { status: 201 });
-        }
-
-        if (recordId && url.pathname === `/v4/domains/${domain}/records/${recordId}`) {
-          const existing = findRecord.get(recordId, domain) as {
-            id: string; domain_name: string; type: string; host: string; answer: string; ttl: number; priority: number | null;
-          } | null;
-          if (!existing) {
-            return Response.json({ message: "record not found" }, { status: 404 });
-          }
-
-          if (request.method === "PUT") {
-            const body = await readJson(request);
-            const type = String(body.type ?? existing.type).toUpperCase();
-            const host = String(body.host ?? existing.host).toLowerCase();
-            const answer = String(body.answer ?? existing.answer);
-            const ttl = body.ttl === undefined ? Number(existing.ttl) : Number(body.ttl);
-            const priority = body.priority === undefined || body.priority === null ? (existing.priority ?? null) : Number(body.priority);
-            updateRecord.run(type, host, answer, ttl, priority, recordId, domain);
-            const row = findRecord.get(recordId, domain) as {
-              id: string; domain_name: string; type: string; host: string; answer: string; ttl: number; priority: number | null;
-            };
-            return Response.json({ record: recordShape(row) });
-          }
-
-          if (request.method === "DELETE") {
-            deleteRecord.run(recordId, domain);
-            return new Response(null, { status: 204 });
-          }
+          return new Response(null, { status: 204 });
         }
       }
 
-      const actionMatch = DOMAIN_ACTION_RE.exec(url.pathname);
-      if (actionMatch) {
-        const domain = actionMatch[1]!.toLowerCase();
-        const action = actionMatch[2]!;
-        if (!isTaken(domain)) {
-          return Response.json({ message: "domain not found" }, { status: 404 });
-        }
-        const row = findDomainRow.get(domain) as {
-          domain_name: string; price: number; reserved_at: string | null;
-          autorenew: string | null; privacy: string | null; locked: string | null; nameservers: string | null;
-        };
-
-        if (action === "getPricing") {
-          const price = Number(row.price);
-          return Response.json({
-            purchasePrice: price,
-            renewalPrice: price,
-            transferPrice: price,
-            premium: price > 100,
-          });
-        }
-
+      const settingMatch = DOMAIN_SETTING_RE.exec(pathname);
+      if (settingMatch && request.method === "PUT") {
+        const domain = settingMatch[1]!.toLowerCase();
+        const setting = settingMatch[2]!;
+        const row = findDomainRow.get(domain) as Parameters<typeof domainShape>[0] | null;
+        if (!row) return problem("domain not found", 404);
         const set = (col: string, val: string) => {
           db.prepare(`UPDATE domains SET ${col} = ? WHERE domain_name = ?`).run(val, domain);
         };
-        const respond = () => Response.json({ domain: domainShape(row) });
 
-        switch (action) {
-          case "enableAutorenew":
-            set("autorenew", "1");
-            return respond();
-          case "disableAutorenew":
-            set("autorenew", "0");
-            return respond();
-          case "enableWhoisPrivacy":
-            set("privacy", "1");
-            return respond();
-          case "disableWhoisPrivacy":
-            set("privacy", "0");
-            return respond();
-          case "lockDomain":
-            set("locked", "1");
-            return respond();
-          case "unlockDomain":
-            set("locked", "0");
-            return respond();
-          case "setNameservers": {
-            const body = await readJson(request);
-            const nameservers = Array.isArray(body.nameservers)
-              ? (body.nameservers as string[])
-              : [];
-            if (nameservers.length === 0) {
-              return Response.json({ message: "nameservers are required" }, { status: 400 });
-            }
-            set("nameservers", JSON.stringify(nameservers));
-            return respond();
+        if (setting === "autorenew") {
+          const body = (await readJson(request)) as { isEnabled?: unknown };
+          if (typeof body.isEnabled !== "boolean") {
+            return problem("isEnabled is required", 422);
           }
-          default:
-            return Response.json({ message: "Not Found" }, { status: 404 });
+          set("autorenew", body.isEnabled ? "1" : "0");
+          return Response.json({ isEnabled: body.isEnabled });
+        }
+        if (setting === "nameservers") {
+          const body = (await readJson(request)) as {
+            provider?: unknown;
+            hosts?: unknown;
+          };
+          if (body.provider !== "basic" && body.provider !== "custom") {
+            return problem('provider must be "basic" or "custom"', 422);
+          }
+          const hosts = body.provider === "custom" ? body.hosts : undefined;
+          if (body.provider === "custom") {
+            if (
+              !Array.isArray(hosts) ||
+              hosts.some((h) => typeof h !== "string")
+            ) {
+              return problem("hosts must be an array of strings", 422);
+            }
+            set("nameservers", JSON.stringify(hosts));
+          }
+          return Response.json({
+            provider: body.provider,
+            hosts: hosts ?? ["ns1.spaceship.com", "ns2.spaceship.com"],
+          });
+        }
+        if (setting === "privacy/preference") {
+          const body = (await readJson(request)) as {
+            privacyLevel?: unknown;
+            userConsent?: unknown;
+          };
+          if (
+            (body.privacyLevel !== "high" && body.privacyLevel !== "public") ||
+            body.userConsent !== true
+          ) {
+            return problem("privacyLevel and userConsent=true are required", 422);
+          }
+          set("privacy", body.privacyLevel === "high" ? "1" : "0");
+          return new Response(null, { status: 204 });
+        }
+        if (setting === "transfer/lock") {
+          const body = (await readJson(request)) as { isLocked?: unknown };
+          if (typeof body.isLocked !== "boolean") {
+            return problem("isLocked is required", 422);
+          }
+          set("locked", body.isLocked ? "1" : "0");
+          return Response.json({ isLocked: body.isLocked });
         }
       }
 
-      const domainInfo = /^\/v4\/domains\/([^/]+)$/.exec(url.pathname);
-      if (domainInfo && request.method === "GET") {
-        const domain = domainInfo[1]!.toLowerCase();
-        const row = findDomainRow.get(domain);
-        if (!row) return Response.json({ message: "domain not found" }, { status: 404 });
-        return Response.json(domainShape(row as Parameters<typeof domainShape>[0]));
+      if (domainRoute && request.method === "GET") {
+        const domain = domainRoute[1]!.toLowerCase();
+        const row = findDomainRow.get(domain) as Parameters<typeof domainShape>[0] | null;
+        if (!row) return problem("domain not found", 404);
+        return Response.json(domainShape(row));
       }
     } catch (err) {
       if (err instanceof Response) return err;
       console.error("[mockingbird]", err);
-      return Response.json({ message: "Internal Server Error" }, { status: 500 });
+      return Response.json({ detail: "Internal Server Error" }, { status: 500 });
     }
 
-    return Response.json({ message: "Not Found" }, { status: 404 });
+    return notFound();
   },
 });
 
-console.log(`mockingbird (fake name.com) listening on :${env.port}`);
-console.log(`  accept auth: ${env.username}:${env.token.slice(0, 4)}...`);
+console.log(`mockingbird (fake spaceship v1) listening on :${env.port}`);
+console.log(`  accept key: ${env.apiKey}:${env.apiSecret.slice(0, 4)}...`);

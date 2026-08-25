@@ -38,6 +38,18 @@ export interface RegistryDomainSettings {
   };
 }
 
+export interface RegistryContactInput {
+  firstName: string;
+  lastName: string;
+  email: string;
+  address1: string;
+  city: string;
+  country: string;
+  stateProvince?: string;
+  postalCode?: string;
+  phone: string;
+}
+
 export function createRegistryClient(config: { baseUrl: string; internalToken: string }) {
   async function req<T>(
     path: string,
@@ -79,6 +91,9 @@ export function createRegistryClient(config: { baseUrl: string; internalToken: s
       return req<{ results: DomainSearchResult[] }>("/v1/check-availability", {
         body: { domainNames },
       });
+    },
+    createContact(input: RegistryContactInput) {
+      return req<{ contactId: string }>("/v1/contacts", { body: input });
     },
     getDomainSettings(domainName: string) {
       return req<{ domain: RegistryDomainSettings }>(

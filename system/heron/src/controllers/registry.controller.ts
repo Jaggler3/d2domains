@@ -1,6 +1,6 @@
 import type { Context } from "hono";
 import { z } from "zod";
-import { createRegistryClient, RegistryError } from "../adapters/namecom";
+import { createRegistryClient, RegistryError } from "../adapters/spaceship";
 import { normalizeRegistryResults } from "../lib/registry-results";
 import { createRateLimiter, type TokenBucketOptions } from "../services/rate-limit";
 import type { Redis } from "ioredis";
@@ -9,9 +9,12 @@ import { loadEnv } from "../config/env";
 const env = loadEnv();
 
 const registry = createRegistryClient({
-  baseUrl: env.NAME_COM_BASE,
-  username: env.NAME_COM_USERNAME,
-  token: env.NAME_COM_TOKEN,
+  baseUrl: env.SPACESHIP_BASE,
+  apiKey: env.SPACESHIP_USERNAME,
+  apiSecret: env.SPACESHIP_TOKEN,
+  registrantContactId: env.SPACESHIP_REGISTRANT_CONTACT_ID,
+  tldPrices: env.TLD_PRICES ? (JSON.parse(env.TLD_PRICES) as Record<string, number>) : undefined,
+  defaultTldPrice: env.DEFAULT_TLD_PRICE,
 });
 
 const searchSchema = z.object({
@@ -28,6 +31,22 @@ const registerSchema = z.object({
   purchasePrice: z.number().positive(),
   purchaseType: z.enum(["registration", "premium"]).default("registration"),
   years: z.number().int().min(1).max(10).default(1),
+  registrantContactId: z.string().min(1).optional(),
+});
+
+const contactSchema = z.object({
+  firstName: z.string().min(1).max(125),
+  lastName: z.string().min(1).max(125),
+  email: z.string().email().max(255),
+  organization: z.string().max(255).optional(),
+  address1: z.string().min(1).max(255),
+  address2: z.string().max(255).optional(),
+  city: z.string().min(1).max(255),
+  country: z.string().length(2),
+  stateProvince: z.string().max(255).optional(),
+  postalCode: z.string().max(16).optional(),
+  phone: z.string().regex(/^\+\d{1,3}\.\d{4,}$/),
+  phoneExt: z.string().max(7).optional(),
 });
 
 const dnsRecordSchema = z.object({
@@ -88,6 +107,14 @@ export function createRegistryController(redis: Redis) {
     return c.json({ results: normalizeRegistryResults(raw.results) });
   }
 
+  async function createContact(c: Context) {
+    const body = await c.req.json().catch(() => null);
+    const parsed = contactSchema.safeParse(body);
+    if (!parsed.success) throw new HeronError("invalid contact", 422);
+    const { contactId } = await registry.createContact(parsed.data);
+    return c.json({ contactId }, 201);
+  }
+
   async function register(c: Context) {
     await gate(c);
     const body = await c.req.json().catch(() => null);
@@ -98,6 +125,7 @@ export function createRegistryController(redis: Redis) {
       purchasePrice: parsed.data.purchasePrice,
       purchaseType: parsed.data.purchaseType,
       years: parsed.data.years,
+      registrantContactId: parsed.data.registrantContactId,
     });
     return c.json(
       {
@@ -197,5 +225,5 @@ export function createRegistryController(redis: Redis) {
     return c.json({ domain });
   }
 
-  return { search, checkAvailability, register, listDnsRecords, createDnsRecord, updateDnsRecord, deleteDnsRecord, getDomain, getPricing, setAutorenew, setPrivacy, setNameservers, setLock };
+  return { search, checkAvailability, createContact, register, listDnsRecords, createDnsRecord, updateDnsRecord, deleteDnsRecord, getDomain, getPricing, setAutorenew, setPrivacy, setNameservers, setLock };
 }

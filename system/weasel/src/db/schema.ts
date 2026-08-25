@@ -17,6 +17,7 @@ export const orders = pgTable("orders", {
   priceCents: integer("price_cents").notNull(),
   totalCents: integer("total_cents"),
   paymentMethodId: text("payment_method_id"),
+  registrantContactId: text("registrant_contact_id"),
   addons: jsonb("addons").$type<AddonLine[]>().notNull().default([]),
   currency: text("currency").notNull().default("usd"),
   status: text("status").notNull().default("pending"),

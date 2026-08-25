@@ -10,6 +10,7 @@ import {
 } from "./catalog";
 import { enqueueEmailProvision, enqueuePurchase, redis } from "./queue";
 import { HttpError } from "../lib/http";
+import { ensureRegistrantContact } from "./contacts.service";
 import { loadEnv } from "../config/env";
 
 const env = loadEnv();
@@ -111,6 +112,7 @@ export async function buyDomain(userId: string, input: BuyInput): Promise<Order>
   }
   const totalCents = priceCents + addonTotalCents(addons);
   const paymentMethodId = input.paymentMethodId ?? null;
+  const registrantContactId = await ensureRegistrantContact(userId);
 
   const idempotencyKey = `${userId}:${domainName}`;
   const { order, reused } = await weasel.createOrder({
@@ -121,6 +123,7 @@ export async function buyDomain(userId: string, input: BuyInput): Promise<Order>
     priceCents,
     totalCents,
     paymentMethodId,
+    registrantContactId,
     addons,
     idempotencyKey,
   });

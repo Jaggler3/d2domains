@@ -8,6 +8,7 @@ export function createRegistryRouter(redis: Redis) {
 
   router.post("/search", (c) => controller.search(c));
   router.post("/check-availability", (c) => controller.checkAvailability(c));
+  router.post("/contacts", (c) => controller.createContact(c));
   router.post("/register", (c) => controller.register(c));
 
   router.get("/dns/:domainName/records", (c) => controller.listDnsRecords(c));
