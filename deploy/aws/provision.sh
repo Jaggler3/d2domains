@@ -72,7 +72,7 @@ aws iam put-role-policy --role-name "$ROLE_NAME" --policy-name d2domains-read \
   \"Version\": \"2012-10-17\",
   \"Statement\": [
     {\"Effect\": \"Allow\", \"Action\": [\"s3:GetObject\"], \"Resource\": \"arn:aws:s3:::${BUCKET}/*\"},
-    {\"Effect\": \"Allow\", \"Action\": [\"ssm:GetParameter\", \"ssm:GetParameters\", \"ssm:GetParametersByPath\"], \"Resource\": \"arn:aws:ssm:${REGION}:${ACCOUNT}:parameter${PARAM_PREFIX}/*\"}
+    {\"Effect\": \"Allow\", \"Action\": [\"ssm:GetParameter\", \"ssm:GetParameters\", \"ssm:GetParametersByPath\"], \"Resource\": [\"arn:aws:ssm:${REGION}:${ACCOUNT}:parameter${PARAM_PREFIX}\", \"arn:aws:ssm:${REGION}:${ACCOUNT}:parameter${PARAM_PREFIX}/*\"]}
   ]
 }" >/dev/null
 
