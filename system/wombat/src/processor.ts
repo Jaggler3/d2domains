@@ -46,6 +46,9 @@ export function createStripeProcessor(stripeSecretKey: string): PaymentProcessor
           payment_method: card.token,
           automatic_payment_methods: {
             enabled: true,
+            // card-only off-session charges never redirect; without this
+            // stripe rejects PI creation when redirect PMs are enabled.
+            allow_redirects: "never",
           },
           description: `d2domains order charge for ${card.brand} ••${card.last4}`,
         });

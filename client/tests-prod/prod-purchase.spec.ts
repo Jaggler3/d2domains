@@ -66,18 +66,34 @@ test("register, buy cheapest domain with email on production", async ({ page }) 
 
   // 4. save a TEST CARD through real Stripe Elements
   await page.getByRole("button", { name: "add card" }).click();
-  const stripeFrame = page
-    .frames()
-    .find((f) => f.url().includes("js.stripe.com"));
-  expect(stripeFrame, "stripe element frame should load").toBeTruthy();
-  const cardField = stripeFrame!.getByPlaceholder(/1234|card number/i)
-    .or(stripeFrame!.locator('input[name="cardnumber"]'))
-    .first();
-  await cardField.fill("4242424242424242", { timeout: 20_000 });
-  const exp = stripeFrame!.locator('input[name="exp-date"]').first();
-  await exp.fill("12 / 34");
-  const cvc = stripeFrame!.locator('input[name="cvc"]').first();
-  await cvc.fill("314");
+
+  async function fillStripeField(
+    placeholder: RegExp,
+    value: string,
+    timeout = 40_000,
+  ) {
+    await expect
+      .poll(async () => {
+        for (const f of page.frames()) {
+          if (!f.url().includes("stripe.com")) continue;
+          const field = f.getByPlaceholder(placeholder);
+          if ((await field.count()) > 0) {
+            try {
+              await field.first().fill(value, { timeout: 5_000 });
+              return true;
+            } catch {
+              /* not interactable yet */
+            }
+          }
+        }
+        return false;
+      }, { timeout })
+      .toBe(true);
+  }
+
+  await fillStripeField(/card number/i, "4242424242424242");
+  await fillStripeField(/MM\s*\/\s*YY/i, "12 / 34");
+  await fillStripeField(/^CVC$/i, "314");
   await page.getByRole("button", { name: "save card" }).click();
   await expect(page.getByText(/••\d{4}/).first()).toBeVisible({ timeout: 30_000 });
 
