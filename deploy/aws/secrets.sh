@@ -36,15 +36,30 @@ if [ -n "$CONTACT_ID" ]; then
   put SPACESHIP_REGISTRANT_CONTACT_ID "$CONTACT_ID"
 fi
 
-# Payments stay on wombat's FAKE processor for launch: no real money moves
-# until STRIPE_SECRET_KEY is deliberately pushed here. Absence of the
-# parameter = unset (SSM cannot store empty strings).
+# Payments: STRIPE keys from .env are TEST-mode keys, so pushing them turns
+# on the real Stripe flow without real money. Remove them from .env (or this
+# script) to fall back to wombat's fake processor.
+STRIPE_SECRET_VALUE="$(get_env STRIPE_SECRET_KEY)"
+if [ -n "$STRIPE_SECRET_VALUE" ]; then
+  put STRIPE_SECRET_KEY "$STRIPE_SECRET_VALUE"
+fi
+WEBHOOK_SECRET_VALUE="$(get_env STRIPE_WEBHOOK_SECRET)"
+if [ -n "$WEBHOOK_SECRET_VALUE" ]; then
+  put STRIPE_WEBHOOK_SECRET "$WEBHOOK_SECRET_VALUE"
+fi
+PUBLISHABLE_VALUE="$(get_env STRIPE_PUBLISHABLE_KEY)"
+if [ -n "$PUBLISHABLE_VALUE" ]; then
+  # Baked into the client bundle at image build time (Next.js public env).
+  put NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY "$PUBLISHABLE_VALUE"
+fi
 put FAKE_PAYMENT_FAIL_MIN_CENTS "0"
 
 # Runtime flags (non-secret but convenient to manage alongside)
 put COOKIE_SECURE "true"
 put APP_ENV       "production"
-MAIL_HOST_VALUE="$(get_env MAIL_HOST)"
+# MAIL_HOST override: point customer MX records at the EC2 host via sslip.io
+# wildcard DNS until a real mail hostname (d2domains.com) is available.
+MAIL_HOST_VALUE="${D2_MAIL_HOST:-$(get_env MAIL_HOST)}"
 [ -n "$MAIL_HOST_VALUE" ] || MAIL_HOST_VALUE="mail.d2domains.dev"
 put MAIL_HOST "$MAIL_HOST_VALUE"
 

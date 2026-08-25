@@ -55,6 +55,7 @@ services:
       context: ./client
       args:
         HOG_URL: http://hog:8787
+        NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
     environment:
       HOG_URL: http://hog:8787
       NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ""
