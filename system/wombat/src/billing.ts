@@ -19,6 +19,7 @@ export interface PaymentMethodRow {
   userId: string;
   provider: string;
   token: string;
+  stripeCustomerId?: string | null;
   brand: string;
   last4: string;
   isDefault: boolean;
@@ -48,6 +49,7 @@ export interface BillingRepo {
     brand: string;
     last4: string;
     token?: string;
+    stripeCustomerId?: string | null;
     expMonth?: number | null;
     expYear?: number | null;
   }): Promise<PaymentMethodRow>;
@@ -119,7 +121,12 @@ export function createBillingService(
 
       const result = await processor.charge({
         amountCents: input.amountCents,
-        card: { token: method.token, brand: method.brand, last4: method.last4 },
+        card: {
+          token: method.token,
+          brand: method.brand,
+          last4: method.last4,
+          customerId: method.stripeCustomerId,
+        },
       });
 
       if (result.ok) {

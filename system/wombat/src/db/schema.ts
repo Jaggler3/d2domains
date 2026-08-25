@@ -5,6 +5,8 @@ export const paymentMethods = pgTable("payment_methods", {
   userId: text("user_id").notNull(),
   provider: text("provider").notNull().default("fake"),
   token: text("token").notNull(),
+  /** stripe customer the payment method is attached to (off-session charges) */
+  stripeCustomerId: text("stripe_customer_id"),
   brand: text("brand").notNull(),
   last4: text("last4").notNull(),
   expMonth: integer("exp_month"),

@@ -43,6 +43,15 @@ function userIdOf(c: Context): string {
   return userId;
 }
 
+async function getOrCreateStripeCustomer(userId: string): Promise<string> {
+  if (!stripe) throw new HttpError("stripe is not configured", 503);
+  const existing = await billingRepo.listPaymentMethods(userId);
+  const known = existing.find((m) => m.stripeCustomerId)?.stripeCustomerId;
+  if (known) return known;
+  const customer = await stripe.customers.create({ metadata: { userId } });
+  return customer.id;
+}
+
 export const wombatController = {
   async createCharge(c: Context) {
     const body = await c.req.json().catch(() => null);
@@ -66,7 +75,9 @@ export const wombatController = {
     const body = await c.req.json().catch(() => null);
     const parsed = methodSchema.safeParse(body);
     if (!parsed.success) throw new HttpError("invalid payment method", 422);
-    let methodInput = parsed.data;
+    let methodInput: z.infer<typeof methodSchema> & {
+      stripeCustomerId?: string;
+    } = parsed.data;
     if (stripe && parsed.data.token?.startsWith("pm_")) {
       const paymentMethod = await stripe.paymentMethods.retrieve(parsed.data.token);
       const card = paymentMethod.card;
@@ -76,6 +87,8 @@ export const wombatController = {
         brand: card.brand ?? parsed.data.brand,
         last4: card.last4 ?? parsed.data.last4,
         token: paymentMethod.id,
+        // confirmCardSetup attached this PM to the user's Stripe customer
+        stripeCustomerId: await getOrCreateStripeCustomer(methodInput.userId),
       };
     }
     const method = await billingRepo.addPaymentMethod(methodInput.userId, methodInput);

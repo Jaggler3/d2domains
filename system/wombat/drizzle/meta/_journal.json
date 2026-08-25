@@ -15,6 +15,13 @@
       "when": 1786602146776,
       "tag": "0001_grey_jimmy_woo",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787682615875,
+      "tag": "0002_hard_ken_ellis",
+      "breakpoints": true
     }
   ]
 }

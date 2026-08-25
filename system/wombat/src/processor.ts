@@ -4,6 +4,8 @@ export interface PaymentCard {
   token: string;
   brand: string;
   last4: string;
+  /** stripe customer the PM is attached to (required for off-session charges) */
+  customerId?: string | null;
 }
 
 export interface ProcessorResult {
@@ -44,6 +46,8 @@ export function createStripeProcessor(stripeSecretKey: string): PaymentProcessor
           currency: "usd",
           confirm: true,
           payment_method: card.token,
+          customer: card.customerId ?? undefined,
+          off_session: Boolean(card.customerId),
           automatic_payment_methods: {
             enabled: true,
             // card-only off-session charges never redirect; without this
