@@ -12,6 +12,7 @@ services:
       WEASEL_URL: http://weasel:8781
       WOMBAT_URL: http://wombat:8782
       OTTER_URL: http://otter:8784
+      DOVE_URL: http://dove:8786
       PORT: 8787
       CLIENT_ORIGIN: http://localhost:3000
     ports:
@@ -243,8 +244,11 @@ services:
         condition: service_started
 
   stalwart:
-    # v0.12+ moved to the stalwartlabs/stalwart image and ships the
-    # urn:stalwart:jmap management API dove depends on.
+    # v0.12+ ships the urn:stalwart:jmap management API dove depends on.
+    # First boot runs in bootstrap mode (no /etc/stalwart/config.json); dove's
+    # startup completes the setup wizard via x:Bootstrap/set, wiring the SQL
+    # directory to d2dove. STALWART_RECOVERY_ADMIN pins a known credential for
+    # bootstrap/recovery instead of a random one printed to logs.
     image: stalwartlabs/stalwart:v0.16.19-alpine
     ports:
       - "25:25"
@@ -253,10 +257,11 @@ services:
       - "143:143"
       - "18080:8080"
     volumes:
-      - stalwart_data:/opt/stalwart-mail
+      # v0.16's bootstrap wizard defaults the datastore to /var/lib/stalwart,
+      # so the named volume must live there (not /opt/stalwart-mail).
+      - stalwart_data:/var/lib/stalwart
     environment:
-      - STALWART_ADMIN_USER=${STALWART_ADMIN_USER}
-      - STALWART_ADMIN_PASSWORD=${STALWART_ADMIN_PASSWORD}
+      - STALWART_RECOVERY_ADMIN=${STALWART_ADMIN_USER}:${STALWART_ADMIN_PASSWORD}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 10s

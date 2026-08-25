@@ -2,6 +2,9 @@
 # heron is the only service that talks to the registry, so only heron's
 # upstream changes. hog and badger still point at heron.
 # Usage: docker compose -f docker-compose.yml -f docker-compose.mock.yml up --watch
+#
+# Also raises the fake processor's decline threshold so e2e can exercise the
+# declined-payment path (large totals decline; normal ones succeed).
 services:
   heron:
     environment:
@@ -9,6 +12,13 @@ services:
     depends_on:
       mockingbird:
         condition: service_started
+
+  wombat:
+    environment:
+      # e2e/mock runs always use the fake processor, even when the local .env
+      # carries real Stripe keys.
+      STRIPE_SECRET_KEY: ""
+      FAKE_PAYMENT_FAIL_MIN_CENTS: "50000"
 
   mockingbird:
     build:

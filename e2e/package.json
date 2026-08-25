@@ -1,0 +1,13 @@
+{
+  "name": "d2domains-e2e",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "api": "bun --env-file=../.env run api.test.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.54.0",
+    "postgres": "^3.4.9"
+  }
+}

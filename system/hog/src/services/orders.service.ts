@@ -95,6 +95,16 @@ export async function buyDomain(userId: string, input: BuyInput): Promise<Order>
   const years = Math.min(Math.max(input.years ?? 1, 1), 10);
   if (!domainName) throw new HttpError("domainName is required", 422);
 
+  // Ownership first: a clearer error than "domain is not available" when the
+  // user already holds the domain (the registry reports it unavailable).
+  try {
+    await weasel.getDomain(domainName, userId);
+    throw new HttpError("you already own this domain", 409);
+  } catch (err) {
+    if (err instanceof HttpError && err.status === 409) throw err;
+    // not owned — fall through to availability
+  }
+
   const { results } = await registry.checkAvailability([domainName]);
   const result = results.find((r) => r.domainName === domainName);
   if (!result || !result.purchasable) {

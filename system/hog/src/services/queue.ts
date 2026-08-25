@@ -64,8 +64,12 @@ export async function enqueueEmailProvision(orderId: string): Promise<void> {
       "provision",
       { orderId },
       {
-        attempts: 5,
-        backoff: { type: "exponential", delay: 1000 },
+        // Provisioning waits on async dependencies (registry purchase,
+        // stalwart DKIM generation). A fixed short cadence lands work within
+        // seconds of its dependency resolving, unlike exponential backoff
+        // which stretches past a minute after a handful of attempts.
+        attempts: 30,
+        backoff: { type: "fixed", delay: 5000 },
         removeOnComplete: 100,
         removeOnFail: 500,
       },

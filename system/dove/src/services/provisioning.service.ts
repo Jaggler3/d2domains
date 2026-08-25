@@ -4,7 +4,7 @@ import type { StalwartClient } from "../adapters/stalwart";
 import type { WeaselClient } from "../adapters/weasel";
 import type { OtterClient } from "../adapters/otter";
 import { HttpError } from "../lib/http";
-import { extractDkim, randomPassword, mailboxLocalPart } from "../lib/mailbox";
+import { randomPassword, mailboxLocalPart } from "../lib/mailbox";
 import { eq, and } from "drizzle-orm";
 
 export interface ProvisioningServiceDeps {
@@ -161,20 +161,17 @@ export function createProvisioningService(deps: ProvisioningServiceDeps) {
 
     try {
       const domainRow = await ensureDomainRow(orderId, order.domainName, order.userId);
-
-      // Register the domain with Stalwart (management JMAP). Tolerate an
-      // "already exists"-style failure so retries stay idempotent.
-      let stalwartResult: Record<string, unknown> = {};
-      try {
-        stalwartResult = await stalwart.call("domain.create", { domain: order.domainName });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        if (!message.toLowerCase().includes("exist")) throw err;
-      }
+      const stalwartDomain = await stalwart.ensureDomain(order.domainName);
 
       // DKIM: Stalwart holds the private key; we publish the public half.
-      const dkimData = await stalwart.call("domain.getDkim", { domain: order.domainName });
-      const dkim = extractDkim(dkimData);
+      // Keys are generated asynchronously after domain creation, so poll
+      // briefly before giving up (the job layer retries every few seconds).
+      let dkim: { selector: string; publicKey: string } | null = null;
+      for (let waited = 0; waited <= 15_000; waited += 2_000) {
+        dkim = await stalwart.getActiveDkim(stalwartDomain.id);
+        if (dkim) break;
+        await new Promise((r) => setTimeout(r, 2_000));
+      }
       if (!dkim) {
         throw new HttpError("stalwart dkim key not ready yet", 503);
       }
@@ -188,7 +185,12 @@ export function createProvisioningService(deps: ProvisioningServiceDeps) {
 
       await db
         .update(domains)
-        .set({ status: "active", dnsPublished: true, updatedAt: new Date() })
+        .set({
+          status: "active",
+          dnsPublished: true,
+          stalwartDomainId: stalwartDomain.id,
+          updatedAt: new Date(),
+        })
         .where(eq(domains.id, domainRow.id));
 
       await db
@@ -196,7 +198,6 @@ export function createProvisioningService(deps: ProvisioningServiceDeps) {
         .set({ status: "provisioned", error: null, updatedAt: new Date() })
         .where(eq(provisioning.orderId, orderId));
 
-      void stalwartResult;
       return { status: "provisioned", primary: credentials[0], mailboxes: credentials };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

@@ -11,6 +11,7 @@ const EnvSchema = z.object({
   STALWART_ADMIN_PASSWORD: z.string().min(1).default("dev-admin-password"),
   STALWART_API_KEY: z.string().optional(),
   MAIL_HOST: z.string().min(1).default("mail.d2domains.dev"),
+  STALWART_BOOTSTRAP_DOMAIN: z.string().min(1).default("d2domains.dev"),
   MAIL_MX_PRIORITY: z.coerce.number().int().min(0).max(65535).default(10),
   DOVE_PGHOST: z.string().min(1).default("localhost"),
   DOVE_PGPORT: z.coerce.number().int().positive().default(5432),

@@ -4,7 +4,7 @@ import type { ProvisioningService } from "../services/provisioning.service";
 type Vars = { provisioningService: ProvisioningService };
 
 export const provisioningRouter = new Hono<{ Variables: Vars }>().post(
-  "/internal/provision",
+  "/provision",
   async (c) => {
     const { orderId } = await c.req.json();
     if (typeof orderId !== "string" || orderId.length === 0) {
@@ -17,7 +17,7 @@ export const provisioningRouter = new Hono<{ Variables: Vars }>().post(
 );
 
 export const mailboxRouter = new Hono<{ Variables: Vars }>().get(
-  "/internal/mailbox",
+  "/mailbox",
   async (c) => {
     const domainName = c.req.query("domainName");
     const userId = c.req.query("userId");
