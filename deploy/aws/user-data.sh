@@ -2,6 +2,11 @@
 # EC2 user-data: base packages for the compose-based deployment.
 set -euxo pipefail
 
+# AWS CLI (Ubuntu AMIs do not ship it)
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install -y awscli || snap install aws-cli --classic
+
 # Docker + compose plugin
 curl -fsSL https://get.docker.com | sh
 systemctl enable --now docker
