@@ -476,6 +476,9 @@ export function createRegistryClient(config: RegistryConfig) {
           body: {
             autoRenew: true,
             years: input.years,
+            // required: without these the async registration fails silently
+            purchasePrice: input.purchasePrice,
+            purchaseType: input.purchaseType,
             privacyProtection: { level: "high", userConsent: true },
             contacts: {
               registrant: contactId,
@@ -512,7 +515,7 @@ export function createRegistryClient(config: RegistryConfig) {
         }
         if (op.status === "failed") {
           throw new RegistryError(
-            `registry registration failed for ${input.domainName}`,
+            `registry registration failed for ${input.domainName}: ${JSON.stringify(op).slice(0, 300)}`,
             502,
             false,
           );
