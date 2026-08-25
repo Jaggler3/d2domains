@@ -55,4 +55,22 @@ PUBLIC_HOST="${PUBLIC_IP//./-}.sslip.io"
 echo "==> deploying (public host: $PUBLIC_HOST)"
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 docker image prune -f
+
+# Stalwart v0.16 one-time setup: dove submits the wizard payload on boot;
+# the server then needs ONE restart to leave bootstrap mode.
+ADMIN_USER="$(grep '^STALWART_ADMIN_USER=' .env | cut -d= -f2-)"
+ADMIN_PASS="$(grep '^STALWART_ADMIN_PASSWORD=' .env | cut -d= -f2-)"
+stalwart_normal() {
+  curl -s -u "$ADMIN_USER:$ADMIN_PASS" -X POST http://localhost:18080/jmap \
+    -H 'Content-Type: application/json' \
+    -d '{"using":["urn:ietf:params:jmap:core","urn:stalwart:jmap"],"methodCalls":[["x:Domain/query",{"filter":null},"c0"]]}' \
+    | grep -q '"x:Domain/query"'
+}
+sleep 8
+if ! stalwart_normal; then
+  echo "==> stalwart in bootstrap mode — submitting wait + single restart"
+  sleep 10 # give dove time to POST x:Bootstrap/set
+  docker compose -f docker-compose.yml -f docker-compose.prod.yml restart stalwart
+fi
+
 docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
