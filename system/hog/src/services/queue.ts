@@ -58,11 +58,14 @@ export async function enqueuePurchase(orderId: string): Promise<void> {
   }
 }
 
-export async function enqueueEmailProvision(orderId: string): Promise<void> {
+export async function enqueueEmailJob(
+  name: "provision" | "deprovision",
+  data: { orderId?: string; domainName?: string; userId?: string },
+): Promise<void> {
   try {
     await emailQueue.add(
-      "provision",
-      { orderId },
+      name,
+      data,
       {
         // Provisioning waits on async dependencies (registry purchase,
         // stalwart DKIM generation). A fixed short cadence lands work within
@@ -75,8 +78,12 @@ export async function enqueueEmailProvision(orderId: string): Promise<void> {
       },
     );
   } catch (err) {
-    console.error("[hog] failed to enqueue email job", err);
+    console.error(`[hog] failed to enqueue email job ${name}`, err);
   }
+}
+
+export async function enqueueEmailProvision(orderId: string): Promise<void> {
+  await enqueueEmailJob("provision", { orderId });
 }
 
 export async function shutdownQueue(): Promise<void> {

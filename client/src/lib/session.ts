@@ -89,37 +89,3 @@ export const getMyOrders = cache(async (): Promise<Order[]> => {
     return [];
   }
 });
-
-export interface MailboxCredential {
-  address: string;
-  password: string;
-}
-
-export interface DomainMailbox {
-  address: string;
-  password: string;
-  imapHost: string;
-  imapPort: number;
-  smtpHost: string;
-  smtpPort: number;
-  mailboxes?: MailboxCredential[];
-}
-
-export const getDomainMailbox = cache(
-  async (domainName: string): Promise<DomainMailbox | null> => {
-    try {
-      const cookieStore = await cookies();
-      const res = await fetch(
-        `${HOG_URL}/api/v1/domains/${encodeURIComponent(domainName)}/email`,
-        {
-          headers: { cookie: cookieStore.toString() },
-          cache: "no-store",
-        },
-      );
-      if (!res.ok) return null;
-      return (await res.json()) as DomainMailbox;
-    } catch {
-      return null;
-    }
-  },
-);

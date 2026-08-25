@@ -4,8 +4,7 @@ import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DomainSettings } from "@/components/domain-settings";
 import { DnsManager } from "@/components/dns-manager";
-import { EmailStarterCard } from "@/components/account/email-starter-card";
-import { getDomainMailbox } from "@/lib/session";
+import { EmailManager } from "@/components/account/email-manager";
 
 export const metadata: Metadata = {
   title: "domain",
@@ -18,8 +17,6 @@ export default async function DomainDetailPage({
 }) {
   const { domainName } = await params;
   const name = decodeURIComponent(domainName);
-
-  const emailData = await getDomainMailbox(name);
 
   return (
     <div className="flex flex-col gap-6">
@@ -37,7 +34,7 @@ export default async function DomainDetailPage({
         </div>
       </div>
 
-      <EmailStarterCard emailData={emailData} />
+      <EmailManager domainName={name} />
       <DomainSettings domainName={name} />
       <DnsManager domainName={name} />
     </div>

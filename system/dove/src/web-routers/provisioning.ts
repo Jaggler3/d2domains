@@ -16,17 +16,32 @@ export const provisioningRouter = new Hono<{ Variables: Vars }>().post(
   },
 );
 
-export const mailboxRouter = new Hono<{ Variables: Vars }>().get(
-  "/mailbox",
-  async (c) => {
-    const domainName = c.req.query("domainName");
-    const userId = c.req.query("userId");
+export const mailboxRouter = new Hono<{ Variables: Vars }>()
+  .get(
+    "/mailbox",
+    async (c) => {
+      const domainName = c.req.query("domainName");
+      const userId = c.req.query("userId");
 
-    if (!domainName || !userId) {
-      return c.json({ error: "domainName and userId required" }, 400);
-    }
+      if (!domainName || !userId) {
+        return c.json({ error: "domainName and userId required" }, 400);
+      }
 
-    const mailbox = await c.get("provisioningService").getMailbox(domainName, userId);
-    return c.json(mailbox);
-  },
-);
+      const mailbox = await c.get("provisioningService").getMailbox(domainName, userId);
+      return c.json(mailbox);
+    },
+  )
+  .delete(
+    "/mailbox",
+    async (c) => {
+      const domainName = c.req.query("domainName");
+      const userId = c.req.query("userId");
+
+      if (!domainName || !userId) {
+        return c.json({ error: "domainName and userId required" }, 400);
+      }
+
+      const result = await c.get("provisioningService").removeMailbox(domainName, userId);
+      return c.json(result);
+    },
+  );

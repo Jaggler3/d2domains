@@ -112,11 +112,43 @@ export function startEmailWorker(): Worker {
   const worker = new Worker(
     "email-jobs",
     async (job) => {
+      if (job.name === "deprovision") {
+        const { domainName, userId } = job.data as {
+          domainName?: unknown;
+          userId?: unknown;
+        };
+        if (
+          typeof domainName !== "string" ||
+          domainName.length === 0 ||
+          typeof userId !== "string" ||
+          userId.length === 0
+        ) {
+          throw new Error(`deprovision job ${job.id ?? "?"} missing domainName/userId`);
+        }
+        const res = await fetch(
+          `${env.DOVE_URL}/internal/mailbox?domainName=${encodeURIComponent(domainName)}&userId=${encodeURIComponent(userId)}`,
+          {
+            method: "DELETE",
+            headers: {
+              "x-internal-token": env.INTERNAL_TOKEN,
+            },
+          },
+        );
+        if (!res.ok && res.status !== 404) {
+          const data = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(`dove deprovision failed: ${data.error ?? res.statusText}`);
+        }
+        console.log(
+          `[pigeon] deprovisioned mailboxes for ${domainName} (user ${userId})`,
+        );
+        return;
+      }
+
       const { orderId } = job.data as { orderId?: unknown };
       if (typeof orderId !== "string" || orderId.length === 0) {
         throw new Error(`email job ${job.id ?? "?"} missing orderId`);
       }
-      
+
       // Delegate provisioning to dove (Stalwart-backed)
       const res = await fetch(`${env.DOVE_URL}/internal/provision`, {
         method: "POST",
@@ -140,8 +172,8 @@ export function startEmailWorker(): Worker {
 
   worker.on("failed", (job, err) => {
     console.error(
-      `[pigeon] email job ${job?.id ?? "?"} failed (will retry):`,
-      err,
+      `[pigeon] email job ${job?.name ?? "?"}/${job?.id ?? "?"} failed (will retry):`,
+      err.message,
     );
   });
 

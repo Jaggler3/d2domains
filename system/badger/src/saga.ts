@@ -7,6 +7,7 @@ export interface Order {
   id: string;
   userId: string;
   domainName: string;
+  kind?: string;
   years: number;
   purchaseType: string;
   priceCents: number;
@@ -160,7 +161,15 @@ export async function processPurchase(orderId: string): Promise<void> {
   let chargeId: string | null = null;
   try {
     chargeId = await chargeWombat(order);
-    console.log(`[badger] charged order ${orderId} (${order.priceCents}¢)`);
+    console.log(`[badger] charged order ${orderId} (${order.totalCents ?? order.priceCents}¢)`);
+
+    // Add-on-only orders (e.g. email added after purchase) have nothing to
+    // register at the registry and no new domain row — the charge is the job.
+    if (order.kind === "addon") {
+      await patchOrder(orderId, { status: "purchased" });
+      console.log(`[badger] addon order ${orderId} purchased`);
+      return;
+    }
 
     await registerAtRegistry(order);
     console.log(`[badger] registered ${order.domainName} at registry`);

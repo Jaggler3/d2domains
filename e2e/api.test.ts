@@ -366,6 +366,144 @@ describe("dns records management", () => {
   });
 });
 
+describe("email added and removed after purchase", () => {
+  const tag = uniq();
+  let user: User;
+  let domainName: string;
+  let addonOrderId: string;
+  let mailboxPassword: string;
+
+  test("buys a plain domain first", async () => {
+    user = await newUser(`late-${tag}`);
+    domainName = await findAvailableDomain(tag);
+    const paymentMethodId = await addPaymentMethod(user);
+    const { status, json } = await req("POST", "/api/v1/domains/buy", {
+      body: { domainName, years: 1, paymentMethodId, addons: [] },
+      cookie: user.cookie,
+    });
+    expect([202, 200]).toContain(status);
+    const order = await waitFor<{ status: string }>(
+      async () => {
+        const { json: o } = await req("GET", `/api/v1/orders/${json.order.id}`, {
+          cookie: user.cookie,
+        });
+        return o?.order?.status === "purchased" || o?.order?.status === "failed"
+          ? o.order
+          : null;
+      },
+      120_000,
+      "plain order to settle",
+    );
+    expect(order.status).toBe("purchased");
+  }, 210_000);
+
+  test("POST /email creates an addon-only order that charges and provisions", async () => {
+    const paymentMethodId = await addPaymentMethod(user);
+    const { status, json } = await req("POST", `/api/v1/domains/${domainName}/email`, {
+      body: { plan: "starter", mailboxes: 2, paymentMethodId },
+      cookie: user.cookie,
+    });
+    expect(status).toBe(202);
+    expect(json.order.kind).toBe("addon");
+    expect(json.order.totalCents).toBe(2999 * 2);
+    addonOrderId = json.order.id;
+
+    const order = await waitFor<{ status: string }>(
+      async () => {
+        const { json: o } = await req("GET", `/api/v1/orders/${addonOrderId}`, {
+          cookie: user.cookie,
+        });
+        return o?.order?.status === "purchased" || o?.order?.status === "failed"
+          ? o.order
+          : null;
+      },
+      120_000,
+      "addon order to settle",
+    );
+    expect(order.status).toBe("purchased");
+  }, 210_000);
+
+  test("mailboxes appear (admin@ + user2@)", async () => {
+    const mailbox = await waitFor<any>(
+      async () => {
+        const { status, json } = await req(
+          "GET",
+          `/api/v1/domains/${domainName}/email`,
+          { cookie: user.cookie },
+        );
+        return status === 200 ? json : null;
+      },
+      180_000,
+      "late email provisioning",
+    );
+    expect(mailbox.mailboxes.map((m: any) => m.address)).toEqual([
+      `admin@${domainName}`,
+      `user2@${domainName}`,
+    ]);
+    mailboxPassword = mailbox.password;
+  }, 240_000);
+
+  test("DELETE /email deprovisions mailboxes and dns records", async () => {
+    const { status } = await req("DELETE", `/api/v1/domains/${domainName}/email`, {
+      cookie: user.cookie,
+    });
+    expect(status).toBe(202);
+
+    // mailbox endpoint flips to 404 once rows are removed
+    await waitFor<boolean>(
+      async () => {
+        const { status: s } = await req("GET", `/api/v1/domains/${domainName}/email`, {
+          cookie: user.cookie,
+        });
+        return s === 404 ? true : null;
+      },
+      120_000,
+      "mailbox removal",
+    );
+
+    // stalwart no longer accepts the deleted credentials
+    const auth = await stalwartEcho(`admin@${domainName}`, mailboxPassword);
+    expect(auth).toBe(401);
+
+    // MX record is gone from the zone
+    await waitFor<boolean>(
+      async () => {
+        const { json } = await req("GET", `/api/v1/domains/${domainName}/dns`, {
+          cookie: user.cookie,
+        });
+        const recs = json.records ?? [];
+        return recs.some((r: any) => r.type === "MX") ? null : true;
+      },
+      90_000,
+      "mx removal",
+    );
+  }, 300_000);
+
+  test("re-adding email after removal works cleanly", async () => {
+    const { status, json } = await req("POST", `/api/v1/domains/${domainName}/email`, {
+      body: { plan: "starter", mailboxes: 1 },
+      cookie: user.cookie,
+    });
+    expect(status).toBe(202);
+    expect(json.order.id).not.toBe(addonOrderId);
+
+    const mailbox = await waitFor<any>(
+      async () => {
+        const { status: s, json: j } = await req(
+          "GET",
+          `/api/v1/domains/${domainName}/email`,
+          { cookie: user.cookie },
+        );
+        return s === 200 ? j : null;
+      },
+      180_000,
+      "re-added email provisioning",
+    );
+    expect(mailbox.address).toBe(`admin@${domainName}`);
+    expect(mailbox.password).not.toBe(mailboxPassword);
+  }, 240_000);
+});
+
 describe("declined payment refunds the charge", () => {
   const tag = uniq();
   const sql = postgres(WOMBAT_DB, { max: 1 });

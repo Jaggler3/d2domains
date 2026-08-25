@@ -127,6 +127,34 @@ describe("purchase saga", () => {
     expect(calls[0]?.method).toBe("GET");
   });
 
+  test("addon-only orders are charged and marked purchased without registry calls", async () => {
+    const calls = stubRoutes([
+      {
+        method: "GET",
+        urlIncludes: "/internal/orders/o1",
+        status: 200,
+        body: { order: { ...order, kind: "addon", totalCents: 599 } },
+      },
+      {
+        method: "POST",
+        urlIncludes: "/internal/charges",
+        status: 201,
+        body: { charge: { id: "chg_addon", status: "succeeded" }, reused: false },
+      },
+      { method: "PATCH", urlIncludes: "/internal/orders/o1", status: 200, body: { order } },
+    ]);
+    await expect(processPurchase("o1")).resolves.toBeUndefined();
+
+    const called = (method: string, path: string) =>
+      calls.some((c) => c.method === method && c.url.includes(path));
+    expect(called("POST", "/internal/charges")).toBe(true);
+    expect(called("POST", "/v1/register")).toBe(false);
+    expect(called("POST", "/internal/domains")).toBe(false);
+
+    const patches = calls.filter((c) => c.method === "PATCH");
+    expect(patches.at(-1)?.body).toMatchObject({ status: "purchased" });
+  });
+
   test("marks order failed when registry declines (409, terminal)", async () => {
     const calls = stubRoutes([
       { method: "GET", urlIncludes: "/internal/orders/o1", status: 200, body: { order } },

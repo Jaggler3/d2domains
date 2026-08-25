@@ -5,7 +5,7 @@ import type { WeaselClient } from "../adapters/weasel";
 import type { OtterClient } from "../adapters/otter";
 import { HttpError } from "../lib/http";
 import { randomPassword, mailboxLocalPart } from "../lib/mailbox";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 
 export interface ProvisioningServiceDeps {
   stalwart: StalwartClient;
@@ -230,5 +230,77 @@ export function createProvisioningService(deps: ProvisioningServiceDeps) {
     };
   }
 
-  return { provision, getMailbox };
+  function isEmailRecordWePublished(type: string, name: string, value: string): boolean {
+    if (type === "MX") return true;
+    if (type !== "TXT") return false;
+    if (name === "_dmarc") return value.includes("v=DMARC1");
+    if (name.endsWith("._domainkey")) return true;
+    return (name === "@" || name === "") && value.startsWith("v=spf1 mx");
+  }
+
+  /** Removes a user's mailboxes + email DNS records for a domain. Idempotent. */
+  async function removeMailbox(domainName: string, userId: string) {
+    const rows = await db
+      .select({ mailbox: mailboxes })
+      .from(mailboxes)
+      .innerJoin(domains, eq(mailboxes.domainId, domains.id))
+      .where(
+        and(
+          eq(domains.domainName, domainName),
+          eq(mailboxes.userId, userId),
+          eq(mailboxes.status, "active"),
+        ),
+      );
+
+    if (rows.length > 0) {
+      // Stalwart reads its directory from these tables — removing the rows
+      // removes authentication and delivery for the addresses. Rows are
+      // deleted outright so a later re-add starts clean (address is unique).
+      const accountNames = rows.map((r) => r.mailbox.accountName);
+      await db.delete(emails).where(inArray(emails.name, accountNames));
+      await db.delete(accounts).where(inArray(accounts.name, accountNames));
+      await db.delete(mailboxes).where(
+        inArray(
+          mailboxes.id,
+          rows.map((r) => r.mailbox.id),
+        ),
+      );
+      await db
+        .update(domains)
+        .set({ status: "email_removed", updatedAt: new Date() })
+        .where(eq(domains.domainName, domainName));
+
+      // Best-effort removal of the DNS records we published.
+      try {
+        const { records } = await otter.listRecords(domainName, userId);
+        for (const rec of records ?? []) {
+          if (!isEmailRecordWePublished(rec.type, rec.name, rec.value)) continue;
+          try {
+            await otter.deleteRecord(domainName, userId, rec.id);
+          } catch (err) {
+            if (!(err instanceof HttpError && err.status === 404)) throw err;
+          }
+        }
+      } catch (err) {
+        console.error(`[dove] dns cleanup failed for ${domainName}:`, err);
+      }
+    }
+
+    await db
+      .insert(provisioning)
+      .values({
+        orderId: `remove:${userId}:${domainName}`,
+        domainName,
+        userId,
+        status: "removed",
+      })
+      .onConflictDoUpdate({
+        target: provisioning.orderId,
+        set: { status: "removed", error: null, updatedAt: new Date() },
+      });
+
+    return { status: "removed", mailboxes: rows.length };
+  }
+
+  return { provision, getMailbox, removeMailbox };
 }

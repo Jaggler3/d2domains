@@ -63,6 +63,12 @@ export function createOtterClient(config: { baseUrl: string; internalToken: stri
       return call<{ zone?: unknown; records?: OtterRecord[] }>(recordsBase(domainName, userId));
     },
     createRecord,
+    async deleteRecord(domainName: string, userId: string, recordId: string) {
+      await call<void>(
+        `/v1/zones/${encodeURIComponent(domainName)}/records/${encodeURIComponent(recordId)}?userId=${encodeURIComponent(userId)}`,
+        { method: "DELETE" },
+      );
+    },
   };
 }
 

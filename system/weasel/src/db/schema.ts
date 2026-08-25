@@ -12,6 +12,8 @@ export const orders = pgTable("orders", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: text("user_id").notNull(),
   domainName: text("domain_name").notNull(),
+  /** "domain" = registration incl. addons; "addon" = add-on-only order (e.g. email added later) */
+  kind: text("kind").notNull().default("domain"),
   years: integer("years").notNull().default(1),
   purchaseType: text("purchase_type").notNull().default("registration"),
   priceCents: integer("price_cents").notNull(),

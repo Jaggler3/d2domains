@@ -16,9 +16,10 @@ const addonSchema = z.object({
 const createOrderSchema = z.object({
   userId: z.string().min(1),
   domainName: z.string().min(1),
+  kind: z.enum(["domain", "addon"]).default("domain"),
   years: z.number().int().min(1).max(10).default(1),
-  purchaseType: z.enum(["registration", "premium"]).default("registration"),
-  priceCents: z.number().int().positive(),
+  purchaseType: z.enum(["registration", "premium", "addon"]).default("registration"),
+  priceCents: z.number().int().min(0),
   totalCents: z.number().int().positive().optional(),
   paymentMethodId: z.string().nullable().optional(),
   registrantContactId: z.string().min(1).nullable().optional(),
@@ -65,6 +66,7 @@ export const weaselController = {
       .values({
         userId: parsed.data.userId,
         domainName: parsed.data.domainName,
+        kind: parsed.data.kind,
         years: parsed.data.years,
         purchaseType: parsed.data.purchaseType,
         priceCents: parsed.data.priceCents,

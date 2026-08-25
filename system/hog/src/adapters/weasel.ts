@@ -6,6 +6,7 @@ export interface Order {
   id: string;
   userId: string;
   domainName: string;
+  kind?: string;
   years: number;
   purchaseType: string;
   priceCents: number;
@@ -95,6 +96,7 @@ export function createWeaselClient(config: { baseUrl: string; internalToken: str
     createOrder(input: {
       userId: string;
       domainName: string;
+      kind?: string;
       years: number;
       purchaseType: string;
       priceCents: number;
