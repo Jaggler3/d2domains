@@ -23,7 +23,7 @@ fi
 SHA="$(git rev-parse --short HEAD)"
 PARAMETERS=$(printf '{
   "commands": [
-    "set -euxo pipefail",
+    "set -eux",
     "mkdir -p /srv/d2domains",
     "cd /srv/d2domains",
     "aws s3 cp s3://%s/releases/latest.tar.gz /tmp/release.tar.gz",
