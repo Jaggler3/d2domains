@@ -32,17 +32,20 @@ put STALWART_ADMIN_PASSWORD "$STALWART_ADMIN_PASSWORD"
 put SPACESHIP_USERNAME    "$(get_env SPACESHIP_USERNAME)"
 put SPACESHIP_TOKEN       "$(get_env SPACESHIP_TOKEN)"
 CONTACT_ID="$(get_env SPACESHIP_REGISTRANT_CONTACT_ID)"
-[ -n "$CONTACT_ID" ] && put SPACESHIP_REGISTRANT_CONTACT_ID "$CONTACT_ID"
+if [ -n "$CONTACT_ID" ]; then
+  put SPACESHIP_REGISTRANT_CONTACT_ID "$CONTACT_ID"
+fi
 
 # Payments stay on wombat's FAKE processor for launch: no real money moves
-# until STRIPE_SECRET_KEY is deliberately pushed here.
-put STRIPE_SECRET_KEY     ""
-put STRIPE_WEBHOOK_SECRET ""
+# until STRIPE_SECRET_KEY is deliberately pushed here. Absence of the
+# parameter = unset (SSM cannot store empty strings).
 put FAKE_PAYMENT_FAIL_MIN_CENTS "0"
 
 # Runtime flags (non-secret but convenient to manage alongside)
 put COOKIE_SECURE "true"
 put APP_ENV       "production"
-put MAIL_HOST     "$(grep '^MAIL_HOST=' .env | cut -d= -f2-)"
+MAIL_HOST_VALUE="$(get_env MAIL_HOST)"
+[ -n "$MAIL_HOST_VALUE" ] || MAIL_HOST_VALUE="mail.d2domains.dev"
+put MAIL_HOST "$MAIL_HOST_VALUE"
 
 echo "==> done."

@@ -26,8 +26,13 @@ if [ -n "$existing_id" ] && [ "$existing_id" != "None" ]; then
   INSTANCE_ID="$existing_id"
   echo "==> reusing instance $INSTANCE_ID"
 else
-  AMI_ID="$(aws ssm get-parameter --name /aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/ami-id \
-    --query Parameter.Value --output text)"
+  # Latest official Ubuntu 24.04 (noble) server AMI from Canonical (099720109477)
+  AMI_ID="$(aws ec2 describe-images --owners 099720109477 \
+    --filters Name=name,Values='ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*' Name=state,Values=available \
+    --query 'sort_by(Images,&CreationDate)[-1].ImageId' --output text)"
+  [ "$AMI_ID" != "None" ] || AMI_ID="$(aws ec2 describe-images --owners 099720109477 \
+    --filters Name=name,Values='ubuntu/images/hvm-ssd/ubuntu-noble-24.04-amd64-server-*' Name=state,Values=available \
+    --query 'sort_by(Images,&CreationDate)[-1].ImageId' --output text)"
   echo "==> launching $INSTANCE_TYPE on $AMI_ID"
   INSTANCE_ID="$(aws ec2 run-instances \
     --image-id "$AMI_ID" \
