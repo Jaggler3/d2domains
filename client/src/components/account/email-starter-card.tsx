@@ -2,7 +2,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Mail, Key, Server } from "lucide-react";
 
 interface EmailStarterCardProps {
-  domainName: string;
   emailData: {
     address: string;
     password: string;
@@ -13,7 +12,7 @@ interface EmailStarterCardProps {
   } | null;
 }
 
-export function EmailStarterCard({ domainName, emailData }: EmailStarterCardProps) {
+export function EmailStarterCard({ emailData }: EmailStarterCardProps) {
   if (!emailData) {
     return (
       <Card>

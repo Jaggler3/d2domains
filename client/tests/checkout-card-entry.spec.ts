@@ -49,7 +49,7 @@ test.describe("checkout card entry", () => {
       await route.fulfill({ json: { clientSecret: "seti_test_secret" } });
     });
 
-    let savedMethods: any[] = [];
+    const savedMethods: Record<string, unknown>[] = [];
     await page.route("**/api/v1/billing/methods", async (route) => {
       if (route.request().method() === "GET") {
         await route.fulfill({ json: { paymentMethods: savedMethods } });

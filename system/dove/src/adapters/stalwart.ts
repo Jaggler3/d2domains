@@ -18,15 +18,19 @@ interface JmapResponse {
 }
 
 /**
- * Thin JMAP management client for Stalwart Mail Server (v0.16+).
- * Talks to POST /jmap with an ApiKey bearer token (created at bootstrap).
+ * Thin management client for Stalwart Mail Server (v0.12+, `urn:stalwart:jmap`).
+ * Talks to POST /jmap. Auth prefers an API key when configured and falls back
+ * to HTTP Basic with the admin credentials (fine for bootstrap/dev).
  */
 export function createStalwartClient(config: StalwartConfig) {
   let apiKey = config.apiKey;
 
   async function call(method: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
-    if (!apiKey) {
-      throw new HttpError("stalwart api key not configured", 503);
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (apiKey) {
+      headers.Authorization = `Bearer ${apiKey}`;
+    } else {
+      headers.Authorization = `Basic ${btoa(`${config.adminUser}:${config.adminPassword}`)}`;
     }
     const payload: JmapRequest = {
       using: ["urn:ietf:params:jmap:core", "urn:stalwart:jmap"],
@@ -36,10 +40,7 @@ export function createStalwartClient(config: StalwartConfig) {
     try {
       res = await fetch(`${config.url}/jmap`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
+        headers,
         body: JSON.stringify(payload),
       });
     } catch {

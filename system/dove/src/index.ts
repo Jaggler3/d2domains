@@ -1,14 +1,22 @@
 import { Hono } from "hono";
+import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { loadEnv } from "./config/env";
 import { requireInternalToken } from "./middleware/internal-auth";
 import { createStalwartClient } from "./adapters/stalwart";
 import { createWeaselClient } from "./adapters/weasel";
 import { createOtterClient } from "./adapters/otter";
-import { createProvisioningService } from "./services/provisioning.service";
+import {
+  createProvisioningService,
+  type ProvisioningService,
+} from "./services/provisioning.service";
 import { provisioningRouter, mailboxRouter } from "./web-routers/provisioning";
+import { db, sql } from "./db/client";
 
 const env = loadEnv();
-const app = new Hono();
+
+await migrate(db, { migrationsFolder: "./drizzle" });
+console.log("[dove] migrations applied");
+const app = new Hono<{ Variables: { provisioningService: ProvisioningService } }>();
 
 const stalwart = createStalwartClient({
   url: env.STALWART_URL,
@@ -32,12 +40,11 @@ const provisioningService = createProvisioningService({
   weasel,
   otter,
   mailHost: env.MAIL_HOST,
+  mxPriority: env.MAIL_MX_PRIORITY,
 });
 
-// We inject the service into the routers via a simple wrapper or just use the closure
-// since Hono context bindings usually come from env/variables.
-// For simplicity in Bun/Hono, we can just call the service directly in the routers
-// if we modify the routers to accept the service, or just use a middleware to attach it.
+// We inject the service into the routers via a simple middleware so the
+// routers stay declarative and testable.
 
 app.use("*", async (c, next) => {
   c.set("provisioningService", provisioningService);
@@ -48,7 +55,17 @@ app.use("/internal/*", requireInternalToken(env.INTERNAL_TOKEN));
 app.route("/internal", provisioningRouter);
 app.route("/internal", mailboxRouter);
 
-export default {
+const server = Bun.serve({
   port: env.DOVE_PORT,
   fetch: app.fetch,
-};
+});
+
+console.log(`dove (mail provisioning) listening on :${server.port}`);
+
+async function shutdown() {
+  await sql.end();
+  process.exit(0);
+}
+
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);

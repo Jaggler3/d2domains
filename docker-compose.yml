@@ -243,7 +243,9 @@ services:
         condition: service_started
 
   stalwart:
-    image: stalwartlabs/mail-server:v0.11.8-alpine
+    # v0.12+ moved to the stalwartlabs/stalwart image and ships the
+    # urn:stalwart:jmap management API dove depends on.
+    image: stalwartlabs/stalwart:v0.16.19-alpine
     ports:
       - "25:25"
       - "587:587"

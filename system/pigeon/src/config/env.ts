@@ -6,6 +6,7 @@ const EnvSchema = z.object({
   REDIS_URL: z.string().default("redis://localhost:6379"),
   WEASEL_URL: z.string().url().default("http://localhost:8781"),
   OTTER_URL: z.string().url().default("http://localhost:8784"),
+  DOVE_URL: z.string().url().default("http://localhost:8786"),
   PIGEON_PORT: z.coerce.number().int().positive().default(8785),
 
   MAIL_HOST: z.string().min(1).default("mail.example-mail.com"),

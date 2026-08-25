@@ -32,3 +32,5 @@ export function createWeaselClient(config: { baseUrl: string; internalToken: str
 
   return { getOrder };
 }
+
+export type WeaselClient = ReturnType<typeof createWeaselClient>;

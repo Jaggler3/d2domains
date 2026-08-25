@@ -1,26 +1,22 @@
 import { Hono } from "hono";
-import { ProvisioningService } from "../services/provisioning.service";
+import type { ProvisioningService } from "../services/provisioning.service";
 
-export const provisioningRouter = new Hono<{
-  Bindings: {
-    provisioningService: ProvisioningService;
-  };
-}>().post(
+type Vars = { provisioningService: ProvisioningService };
+
+export const provisioningRouter = new Hono<{ Variables: Vars }>().post(
   "/internal/provision",
   async (c) => {
     const { orderId } = await c.req.json();
-    if (!orderId) return c.json({ error: "orderId required" }, 400);
+    if (typeof orderId !== "string" || orderId.length === 0) {
+      return c.json({ error: "orderId required" }, 400);
+    }
 
     const result = await c.get("provisioningService").provision(orderId);
     return c.json(result);
   },
 );
 
-export const mailboxRouter = new Hono<{
-  Bindings: {
-    provisioningService: ProvisioningService;
-  };
-}>().get(
+export const mailboxRouter = new Hono<{ Variables: Vars }>().get(
   "/internal/mailbox",
   async (c) => {
     const domainName = c.req.query("domainName");

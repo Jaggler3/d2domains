@@ -1,8 +1,8 @@
-# Production override: real name.com prod API instead of the dev API.
+# Production override: real spaceship prod API instead of the dev API.
 # Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 #
 # NOTE: registry credentials come from env_file ./.env — for prod, that file
-# must contain the prod NAME_COM_USERNAME/NAME_COM_TOKEN (the values at the
+# must contain the prod SPACESHIP_USERNAME/SPACESHIP_TOKEN (the values at the
 # bottom of the current .env). Non-secret prod settings are overridden here.
 services:
   hog:
@@ -15,7 +15,7 @@ services:
   heron:
     command: bun run src/index.ts
     environment:
-      NAME_COM_BASE: https://api.name.com
+      SPACESHIP_BASE: https://api.spaceship.com
     restart: unless-stopped
 
   weasel:
@@ -40,4 +40,11 @@ services:
 
   pigeon:
     command: bun run src/index.ts
+    restart: unless-stopped
+
+  dove:
+    command: bun run src/index.ts
+    restart: unless-stopped
+
+  stalwart:
     restart: unless-stopped

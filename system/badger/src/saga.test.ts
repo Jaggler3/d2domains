@@ -59,7 +59,12 @@ function orderRoutes(overrides: Partial<typeof order> = {}): Route[] {
   const o = { ...order, ...overrides };
   return [
     { method: "GET", urlIncludes: "/internal/orders/o1", status: 200, body: { order: o } },
-    { method: "POST", urlIncludes: "/internal/charges", status: 201, body: { charge: {}, reused: false } },
+    {
+      method: "POST",
+      urlIncludes: "/internal/charges",
+      status: 201,
+      body: { charge: { id: "chg_1", status: "succeeded" }, reused: false },
+    },
     { method: "POST", urlIncludes: "/v1/register", status: 201, body: { domainName: o.domainName } },
     { method: "POST", urlIncludes: "/internal/domains", status: 201, body: { domain: {} } },
     { method: "PATCH", urlIncludes: "/internal/orders/o1", status: 200, body: { order: o } },
@@ -125,11 +130,21 @@ describe("purchase saga", () => {
   test("marks order failed when registry declines (409, terminal)", async () => {
     const calls = stubRoutes([
       { method: "GET", urlIncludes: "/internal/orders/o1", status: 200, body: { order } },
-      { method: "POST", urlIncludes: "/internal/charges", status: 201, body: { charge: {}, reused: false } },
+      {
+        method: "POST",
+        urlIncludes: "/internal/charges",
+        status: 201,
+        body: { charge: { id: "chg_1", status: "succeeded" }, reused: false },
+      },
       { method: "POST", urlIncludes: "/v1/register", status: 409, body: { error: "domain already taken" } },
+      { method: "POST", urlIncludes: "/internal/charges/chg_1/refund", status: 200, body: { charge: { status: "refunded" } } },
       { method: "PATCH", urlIncludes: "/internal/orders/o1", status: 200, body: { order } },
     ]);
     await expect(processPurchase("o1")).resolves.toBeUndefined();
+
+    const refund = calls.find((c) => c.url.includes("/refund"));
+    expect(refund).toBeDefined();
+    expect(refund?.body).toMatchObject({ userId: "u1" });
 
     const patches = calls.filter((c) => c.method === "PATCH");
     expect(patches.at(-1)?.body).toMatchObject({
@@ -140,10 +155,25 @@ describe("purchase saga", () => {
     );
   });
 
+  test("does not attempt a refund when the charge itself was declined", async () => {
+    const calls = stubRoutes([
+      { method: "GET", urlIncludes: "/internal/orders/o1", status: 200, body: { order } },
+      { method: "POST", urlIncludes: "/internal/charges", status: 402, body: { error: "card declined" } },
+      { method: "PATCH", urlIncludes: "/internal/orders/o1", status: 200, body: { order } },
+    ]);
+    await expect(processPurchase("o1")).resolves.toBeUndefined();
+    expect(calls.some((c) => c.url.includes("/refund"))).toBe(false);
+  });
+
   test("rethrows transient registry errors (5xx) for retry", async () => {
     stubRoutes([
       { method: "GET", urlIncludes: "/internal/orders/o1", status: 200, body: { order } },
-      { method: "POST", urlIncludes: "/internal/charges", status: 201, body: { charge: {}, reused: false } },
+      {
+        method: "POST",
+        urlIncludes: "/internal/charges",
+        status: 201,
+        body: { charge: { id: "chg_1", status: "succeeded" }, reused: false },
+      },
       { method: "POST", urlIncludes: "/v1/register", status: 500, body: {} },
     ]);
     await expect(processPurchase("o1")).rejects.toBeInstanceOf(WorkerError);
@@ -171,11 +201,12 @@ describe("purchase saga", () => {
         method: "POST",
         urlIncludes: "/internal/charges",
         status: 201,
-        body: { charge: { status: "failed", failureReason: "card declined (test rule)" }, reused: false },
+        body: { charge: { id: "chg_1", status: "failed", failureReason: "card declined (test rule)" }, reused: false },
       },
       { method: "PATCH", urlIncludes: "/internal/orders/o1", status: 200, body: { order } },
     ]);
     await expect(processPurchase("o1")).resolves.toBeUndefined();
+    expect(calls.some((c) => c.url.includes("/refund"))).toBe(false);
     const patches = calls.filter((c) => c.method === "PATCH");
     expect(patches.at(-1)?.body).toMatchObject({ status: "failed" });
     expect(String((patches.at(-1)?.body as { error?: string }).error ?? "")).toContain(

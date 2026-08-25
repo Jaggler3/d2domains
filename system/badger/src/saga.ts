@@ -12,6 +12,7 @@ export interface Order {
   priceCents: number;
   totalCents: number | null;
   paymentMethodId: string | null;
+  registrantContactId?: string | null;
   status: string;
   error: string | null;
 }
@@ -66,7 +67,11 @@ export async function patchOrder(
   await apiFetch(`${WEASEL_URL}/internal/orders/${orderId}`, "PATCH", patch);
 }
 
-export async function chargeWombat(order: Order): Promise<void> {
+/**
+ * Charges the order total via wombat. Returns the wombat charge id when a
+ * charge exists in `succeeded` state (needed to refund if later steps fail).
+ */
+export async function chargeWombat(order: Order): Promise<string | null> {
   const { status, data } = await apiFetch(`${WOMBAT_URL}/internal/charges`, "POST", {
     orderId: order.id,
     userId: order.userId,
@@ -77,16 +82,33 @@ export async function chargeWombat(order: Order): Promise<void> {
     throw new WorkerError(`charge declined (${status})`, false);
   }
   if (status >= 500) throw new WorkerError(`wombat error ${status}`, true);
-  if ((data as { reused?: boolean }).reused === undefined && status >= 300) {
-    throw new WorkerError(`unexpected charge response ${status}`, true);
-  }
-  const chargeStatus = (data as { charge?: { status?: string } }).charge?.status;
-  if (chargeStatus === "failed") {
+  const charge = data.charge as { id?: string; status?: string } | undefined;
+  if (charge?.status === "failed") {
     throw new WorkerError(
       `payment declined: ${(data as { charge?: { failureReason?: string } }).charge?.failureReason ?? "card declined"}`,
       false,
     );
   }
+  return typeof charge?.id === "string" ? charge.id : null;
+}
+
+/** Best-effort full refund of a succeeded charge. Throws on transport errors only. */
+export async function refundWombat(chargeId: string, userId: string): Promise<boolean> {
+  const { status, data } = await apiFetch(
+    `${WOMBAT_URL}/internal/charges/${encodeURIComponent(chargeId)}/refund`,
+    "POST",
+    { userId },
+  );
+  if (status >= 500) {
+    throw new WorkerError(`wombat refund error ${status}`, true);
+  }
+  if (status >= 400) {
+    console.error(
+      `[badger] refund rejected for charge ${chargeId}: ${JSON.stringify(data)}`,
+    );
+    return false;
+  }
+  return true;
 }
 
 export async function registerAtRegistry(order: Order): Promise<void> {
@@ -95,6 +117,7 @@ export async function registerAtRegistry(order: Order): Promise<void> {
     purchasePrice: order.priceCents / 100,
     purchaseType: order.purchaseType,
     years: order.years,
+    registrantContactId: order.registrantContactId ?? undefined,
   });
   if (status >= 400 && status < 500) {
     throw new WorkerError(
@@ -134,8 +157,9 @@ export async function processPurchase(orderId: string): Promise<void> {
     return;
   }
 
+  let chargeId: string | null = null;
   try {
-    await chargeWombat(order);
+    chargeId = await chargeWombat(order);
     console.log(`[badger] charged order ${orderId} (${order.priceCents}¢)`);
 
     await registerAtRegistry(order);
@@ -148,6 +172,22 @@ export async function processPurchase(orderId: string): Promise<void> {
     console.log(`[badger] order ${orderId} purchased`);
   } catch (err) {
     if (err instanceof WorkerError && !err.retryable) {
+      // The customer was charged for something that will never be delivered —
+      // refund before marking the order failed. Best-effort: a refund failure
+      // must not mask the original error or block the failure transition.
+      if (chargeId) {
+        try {
+          const refunded = await refundWombat(chargeId, order.userId);
+          if (refunded) {
+            console.log(`[badger] refunded charge ${chargeId} for failed order ${orderId}`);
+          }
+        } catch (refundErr) {
+          console.error(
+            `[badger] refund attempt errored for order ${orderId}:`,
+            refundErr instanceof Error ? refundErr.message : refundErr,
+          );
+        }
+      }
       console.error(`[badger] terminal failure for order ${orderId}:`, err.message);
       await patchOrder(orderId, { status: "failed", error: err.message });
       return;

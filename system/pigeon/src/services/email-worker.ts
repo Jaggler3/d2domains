@@ -117,9 +117,8 @@ export function startEmailWorker(): Worker {
         throw new Error(`email job ${job.id ?? "?"} missing orderId`);
       }
       
-      // Call dove provisioning instead of internal processProvisioningJob
-      const doveUrl = env.DOVE_URL || "http://localhost:8786";
-      const res = await fetch(`${doveUrl}/internal/provision`, {
+      // Delegate provisioning to dove (Stalwart-backed)
+      const res = await fetch(`${env.DOVE_URL}/internal/provision`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -129,7 +128,7 @@ export function startEmailWorker(): Worker {
       });
 
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(`dove provisioning failed: ${data.error ?? res.statusText}`);
       }
     },
