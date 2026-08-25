@@ -15,7 +15,7 @@ services:
   heron:
     command: bun run src/index.ts
     environment:
-      SPACESHIP_BASE: https://api.spaceship.com
+      SPACESHIP_BASE: https://spaceship.dev/api
     restart: unless-stopped
 
   weasel:

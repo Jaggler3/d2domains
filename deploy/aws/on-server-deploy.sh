@@ -47,6 +47,7 @@ PIGEON_URL=http://pigeon:8785
 DOVE_URL=http://dove:8786
 HOG_URL=http://hog:8787
 STALWART_URL=http://stalwart:8080
+SPACESHIP_BASE=https://spaceship.dev/api
 ENVEOF
 
 {

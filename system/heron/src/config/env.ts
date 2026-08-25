@@ -4,7 +4,7 @@ const EnvSchema = z.object({
   INTERNAL_TOKEN: z.string().min(1),
   SPACESHIP_USERNAME: z.string().min(1),
   SPACESHIP_TOKEN: z.string().min(1),
-  SPACESHIP_BASE: z.string().url().default("https://api.dev.spaceship.com"),
+  SPACESHIP_BASE: z.string().url().default("https://spaceship.dev/api"),
   SPACESHIP_REGISTRANT_CONTACT_ID: z.preprocess(
     (v) => (v === "" ? undefined : v),
     z.string().min(1).optional(),
