@@ -1,12 +1,13 @@
-#!/bin/zsh
+#!/bin/bash
+# Deploys d2domains production.
+#
+# AWS path (current): uploads the committed HEAD as an S3 release artifact
+# and runs deploy/aws/on-server-deploy.sh on the instance over SSM — no SSH.
+#
+# Usage:
+#   ./deploy.sh            # artifact + remote deploy + status output
 
-# Update the pipeline definition first
-echo "Updating pipeline definition..."
-cd deploy && npm run deploy:pipeline || npx cdk deploy D2DomainsProductionPipeline
+set -euo pipefail
+cd "$(dirname "$0")"
 
-# Trigger the pipeline execution
-echo "Starting pipeline execution..."
-PIPELINE_NAME=$(aws codepipeline list-pipelines --query 'pipelines[0].name' --output text)
-aws codepipeline start-pipeline-execution --name "$PIPELINE_NAME"
-
-echo "Deployment triggered successfully!"
+exec deploy/aws/deploy-remote.sh "$@"

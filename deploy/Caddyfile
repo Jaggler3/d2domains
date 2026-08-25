@@ -1,0 +1,8 @@
+# TLS termination for the d2domains web app.
+# {$D2_PUBLIC_HOST} is substituted from the caddy container's environment
+# (set in docker-compose.prod.yml via .env). Caddy obtains Let's Encrypt
+# certificates automatically over HTTP-01 (port 80 must be reachable).
+
+{$D2_PUBLIC_HOST} {
+	reverse_proxy client:3000
+}

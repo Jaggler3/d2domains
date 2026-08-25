@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Runs ON the EC2 instance (via SSM). Rebuilds .env from SSM, unpacks the
+# latest release already placed at /srv/d2domains by the caller, and re-ups
+# the compose stack. Public hostname is derived from instance metadata.
+set -euo pipefail
+
+cd /srv/d2domains
+
+REGION="$(curl -s -H "X-aws-ec2-metadata-token: $(curl -s -X PUT -H 'X-aws-ec2-metadata-token: required' http://169.254.169.254/latest/api/token)" http://169.254.169.254/latest/meta-data/placement/region)"
+export AWS_DEFAULT_REGION="$REGION"
+
+echo "==> rebuilding .env from SSM"
+umask 077
+: > .env
+for p in $(aws ssm get-parameters-by-path --path /d2domains/prod --recursive \
+            --query 'Parameters[].Name' --output text); do
+  key="$(basename "$p")"
+  val="$(aws ssm get-parameter --name "$p" --with-decryption --query Parameter.Value --output text)"
+  printf '%s=%s\n' "$key" "$val" >> .env
+done
+
+cat >> .env <<'ENVEOF'
+DATABASE_URL=postgresql://postgres:postgres@postgres:5432/d2gres
+WEASEL_DATABASE_URL=postgresql://postgres:postgres@postgres:5432/d2weasel
+WOMBAT_DATABASE_URL=postgresql://postgres:postgres@postgres:5432/d2wombat
+OTTER_DATABASE_URL=postgresql://postgres:postgres@postgres:5432/d2otter
+PIGEON_DATABASE_URL=postgresql://postgres:postgres@postgres:5432/d2pigeon
+DOVE_DATABASE_URL=postgresql://postgres:postgres@postgres:5432/d2dove
+DOVE_PGHOST=postgres
+DOVE_PGPORT=5432
+DOVE_PGUSER=postgres
+DOVE_PGPASSWORD=postgres
+DOVE_PGDATABASE=d2dove
+REDIS_URL=redis://redis:6379
+REGISTRY_URL=http://heron:8783
+WEASEL_URL=http://weasel:8781
+WOMBAT_URL=http://wombat:8782
+OTTER_URL=http://otter:8784
+PIGEON_URL=http://pigeon:8785
+DOVE_URL=http://dove:8786
+HOG_URL=http://hog:8787
+STALWART_URL=http://stalwart:8080
+ENVEOF
+
+IMDS_TOKEN="$(curl -s -X PUT -H 'X-aws-ec2-metadata-token: required' \
+  http://169.254.169.254/latest/api/token)"
+PUBLIC_IP="$(curl -s -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" \
+  http://169.254.169.254/latest/meta-data/public-ipv4)"
+PUBLIC_HOST="${PUBLIC_IP//./-}.sslip.io"
+{
+  echo "D2_PUBLIC_HOST=$PUBLIC_HOST"
+  echo "CLIENT_ORIGIN=https://$PUBLIC_HOST"
+} >> .env
+
+echo "==> deploying (public host: $PUBLIC_HOST)"
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+docker image prune -f
+docker compose -f docker-compose.yml -f docker-compose.prod.yml ps

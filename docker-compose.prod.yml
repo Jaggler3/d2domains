@@ -48,3 +48,33 @@ services:
 
   stalwart:
     restart: unless-stopped
+
+  # Web container (dev runs the client on the host instead).
+  client:
+    build:
+      context: ./client
+      args:
+        HOG_URL: http://hog:8787
+    environment:
+      HOG_URL: http://hog:8787
+      NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ""
+    restart: unless-stopped
+
+  # TLS terminator in front of the client. Hostname comes from .env
+  # (D2_PUBLIC_HOST) — an <ip>.sslip.io stopgap until d2domains.com lands.
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      D2_PUBLIC_HOST: ${D2_PUBLIC_HOST:?set D2_PUBLIC_HOST in .env}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:
