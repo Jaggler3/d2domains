@@ -32,6 +32,8 @@ Every service is a folder under `system/<animal>/`, runs on Bun, HTTP via Hono, 
 | **mockingbird** | 8890 | fake spaceship | sqlite | Implements spaceship v1 API (X-Api-Key/X-Api-Secret, async registrations) for mock compose |
 | **otter** | 8784 | DNS zones + records | Postgres `d2otter` | Source of truth for DNS; syncs to spaceship via heron |
 | **pigeon** | — (worker-only) | email add-on provisioning | Postgres `d2pigeon` | BullMQ `email-jobs` consumer: mailbox + MX/SPF/DKIM/DMARC records for purchased orders; idempotent by orderId |
+| **dove** | 8786 | mail provisioning API (Stalwart-backed) | Postgres `d2dove` (+ Stalwart's RocksDB via container) | HTTP service pigeon delegates to: creates domains/DKIM in Stalwart via `urn:stalwart:jmap` management API, writes mailbox rows into the SQL-directory tables Stalwart reads, publishes email DNS via otter. Runs idempotent bootstrap on boot (see Gotchas). |
+| **stalwart** | — (compose only) | THE actual mail server (SMTP/IMAP/JMAP) | named volume at `/var/lib/stalwart` | v0.16 image `stalwartlabs/stalwart`. Authenticates users from d2dove Postgres (SQL directory). First boot = bootstrap mode; dove completes setup, then ONE container restart is required. |
 
 ### Storage rule (important)
 Durable production data = **Postgres** (one instance, one DB per service). **sqlite only** for disposable/dev-only data (mockingbird, beaver). heron/badger are stateless. Do not add sqlite to a service whose data must survive in production.
@@ -60,7 +62,9 @@ Durable production data = **Postgres** (one instance, one DB per service). **sql
 - **Auth**: DB-backed opaque sessions, httpOnly cookie `hog_session`, argon2id via `Bun.password`. Cookie set by hog; client proxies so it stays first-party. Client server-side session helpers in `client/src/lib/session.ts` fetch hog directly with the cookie (`getCurrentUser`, `getMyDomains`, `getMyOrders`) wrapped in React `cache()`.
 - **Search**: public. client → hog `POST /api/v1/domains/search` → Redis cache (key `domain:search:{keyword}:{tlds}`) → heron `/v1/search` → spaceship. Results normalized to a stable DTO: `purchasable`, `premium`, `purchasePrice`/`renewalPrice` (null when unavailable), `purchaseType`. spaceship omits fields for unavailable domains; normalize so the client contract is stable. **Search cache is cleared on buy** (`clearSearchCache`).
 - **Buy**: `POST /api/v1/domains/buy` (auth) → `checkAvailability` for authoritative price/type (never trust client price) → ensure per-user registrant contact (hog `ensureRegistrantContact`) → order in weasel (idempotency key `user:domain`, pending; `priceCents` = registry amount, `totalCents` = domain + add-ons, `addons` jsonb line items, `paymentMethodId`, `registrantContactId`) → enqueue `purchases` → `202 {order}`. badger: charge wombat `totalCents` + paymentMethodId → register at heron `/v1/register` (purchasePrice + purchaseType + registrantContactId; 409/400 = terminal → order failed, transient = BullMQ backoff) → create domain in weasel (expiresAt = now + years) → mark order purchased. When the order has an email add-on, hog also enqueues `email-jobs` at buy time.
-- **Email provisioning**: pigeon (`email-jobs` consumer) fetches the order → waits until `purchased` (pending = retry, failed = never provision) → for each email add-on: record provisioning state in `d2pigeon` (keyed by orderId), create `admin@<domain>` mailbox, write MX `@` / TXT `@` SPF / TXT `_dkim` / TXT `_dmarc` through otter (skipping records that already exist) → mark provisioned. Replayed jobs no-op. Placeholder record values live in pigeon env (`MAIL_HOST`, `MAIL_SPF_TXT`, `MAIL_DKIM_TXT`, `MAIL_DMARC_TXT`) — no real mail infra yet; swap in a provider later.
+- **Email provisioning (real mail via Stalwart)**: pigeon consumes `email-jobs`; `provision` jobs POST `{orderId}` to dove, which waits for the order to be `purchased`, creates the domain in Stalwart (auto-DKIM), writes mailbox rows into the SQL-directory tables Stalwart authenticates against (argon2id hashes; displayable password kept in `dove_mailboxes`), and publishes MX/SPF/DKIM/DMARC via otter (deduped). Honors purchased `mailboxes: N` (`admin@`, then `user2..N@`). Retries are idempotent at every step.
+- **Email add/remove anytime**: `POST /api/v1/domains/:name/email` creates an addon-only order (`orders.kind='addon'`, generation-numbered idempotency key) that badger charges without touching the registry, then provisions. `DELETE .../email` enqueues a `deprovision` job: dove deletes directory rows + dove rows + its published DNS records. No refunds on remove (disclosed in UI); renewal cancellation is implicit until a renewal engine exists.
+- **Stalwart bootstrap**: fresh volume → v0.16 boots in bootstrap mode (no `/etc/stalwart/config.json`); dove's startup submits `x:Bootstrap/set` (hostname=`MAIL_HOST`, SQL directory → d2dove Postgres), then ONE stalwart container restart completes setup into normal mode; dove then binds `Authentication.directoryId` + triggers ReloadSettings. `e2e/up.sh` / `deploy/aws/on-server-deploy.sh` own the restart.
 - **Dashboard**: `/account` (server component) renders domains + pending/failed orders from `getMyDomains()`/`getMyOrders()`.
 - **DNS**: `/account/[domainName]` detail page → hog `GET/POST/PATCH/DELETE /api/v1/domains/:name/dns` (ownership checked via weasel) → otter (source of truth, Postgres) → local write + enqueue `dns-sync` job → otter in-process worker → heron `/v1/dns/:domain/records` → spaceship. Records have `syncStatus` pending|synced|error and `registryRecordId`. First view pulls/imports existing spaceship records.
 - **Registrar settings**: `/api/v1/domains/:name/settings` GET/PATCH (ownership checked via weasel) → heron `/v1/domains/:name` + toggle/setNameservers endpoints → spaceship (autorenew, whois privacy, transfer lock, nameservers). hog maps settings patch fields to heron `{enabled}`/`{nameservers}` payloads.
@@ -89,6 +93,16 @@ Durable production data = **Postgres** (one instance, one DB per service). **sql
 - Typecheck: `bunx tsc --noEmit` in each service; `npx tsc --noEmit` + `npm run lint` in client.
 - Local dev requires: local Postgres with DBs created (`createdb d2gres d2weasel d2wombat d2otter d2pigeon`), local redis. `docker compose` handles all of it in containers.
 
+### E2E (against the live mock compose stack)
+```bash
+e2e/up.sh            # build + start stack; handles the stalwart bootstrap restart
+e2e/test-api.sh      # 17-test API suite (~30s warm): buy journeys, provisioning,
+                     # stalwart directory auth, DNS sync, settings, add/remove email lifecycle
+e2e/test-browser.sh  # Playwright UI journey (register → search → checkout → buy → mailbox card)
+e2e/down.sh          # teardown; FRESH=1 e2e/down.sh wipes volumes
+```
+The browser suite lives in `client/tests/journey.spec.ts`; `checkout-card-entry.spec.ts` is a fully mocked unit-style spec that runs without the stack.
+
 ## Direction / roadmap
 
 Completed: login, public search, buy flow, dashboard, DNS management (otter + sync to spaceship via heron, domain detail page), registrar settings (autorenew, whois privacy, transfer lock, nameservers).
@@ -97,7 +111,8 @@ Billing depth (done): wombat payment methods (CRUD + default), charge lifecycle 
 Client polish (done): order history page (`/account/orders`), whois/registrant contacts on the domain detail page, per-user rate limits on DNS/settings (namespaced buckets), per-domain search-cache invalidation on buy.
 Email add-on (done): catalog (hog `EMAIL_PLANS`), quote/buy with addons (`totalCents`, `addons`, `paymentMethodId` on weasel orders), badger charges `totalCents` + passes `paymentMethodId`, `email-jobs` enqueue at buy, and pigeon (BullMQ `email-jobs` consumer) provisions `admin@<domain>` + MX/SPF/DKIM/DMARC via otter with idempotent replay. Real mail infra (provider-backed or self-hosted) is deferred; placeholder DNS values live in pigeon env.
 Up next (agreed order):
-- **Deploy** is intentionally deferred (managed Postgres, hosts, CI, TLS) — everything runs locally/compose.
+- **Deployed (2026-08)**: single EC2 t3.small in us-east-2 running docker-compose prod files behind Caddy TLS on `https://18-227-229-244.sslip.io` (stopgap until d2domains.com access lands). Deploys: commit to local main → `./deploy.sh` (S3 artifact + SSM remote script; no SSH, no GitHub token). Secrets in SSM `/d2domains/prod/*`; instance role reads them + S3. Payments run on wombat's FAKE processor until STRIPE keys are deliberately pushed to SSM. The old CDK/ECS pipeline in `deploy/` is dormant.
+- Future: managed Postgres/RDS, real domain hookup (swap D2_PUBLIC_HOST/CLIENT_ORIGIN/MAIL_HOST), mail deliverability (rDNS/PTR, port-25 unthrottle request, SPF/DKIM/DMARC for the mail host), ECS migration if HA needed.
 - **Future service extractions** on trigger (don't pre-build): notifications (nightingale), identity (meerkat), events (kestrel), etc.
 Long-term product goals: sell/include **email services** and **hosting services** alongside domains.
 
@@ -105,6 +120,11 @@ Long-term product goals: sell/include **email services** and **hosting services*
 
 - `docker compose up --watch` runs whatever is in the image; if the image predates newly-committed code, containers serve stale routes/endpoints (symptom: 404s that work when you test the service directly). Rebuild with `docker compose up --build --watch`. `--build` only matters on `up`, not while watching — source edits hot-reload via sync + `bun --watch`, and `package.json` changes trigger a rebuild action.
 - spaceship v1 DNS is a bulk model: `GET/PUT/DELETE /v1/dns/records/{domain}` with `{items:[...]}` — there are no registry record IDs. heron synthesizes ids (base64url of type/name/value/ttl/priority) so otter's per-record CRUD contract stays stable; update = delete-match + re-save.
+- Stalwart v0.16 config is JSON-only (`config.json` = datastore location); everything else lives in the DB managed via `x:*` JMAP methods under `urn:stalwart:jmap`. The image ENTRYPOINT is the binary; default CMD expects `/etc/stalwart/config.json` else bootstrap mode. Bootstrap wizard needs one restart after `x:Bootstrap/set`. DKIM keys generate asynchronously after domain creation — poll before publishing.
+- Spaceship external API base is `https://spaceship.dev/api` (api.spaceship.com does NOT resolve).
+- AWS SSM: `GetParametersByPath` needs BOTH the parent path ARN and child `/*` in the role policy; IMDS is unreachable from SSM-run scripts (pass region/host as args); SSM's shell is dash (`sh`), not bash.
+- Caddy terminates TLS using `$D2_PUBLIC_HOST` from `.env` (`<ip>.sslip.io` works with Let's Encrypt HTTP-01). Swap to d2domains.com by changing D2_PUBLIC_HOST/CLIENT_ORIGIN/MAIL_HOST only.
+- `bun install --ignore-scripts` in Docker can fail with IntegrityCheckFailed on flaky registry days — rebuild with `--no-cache`.
 - spaceship registrations are async: `POST /v1/domains/{domain}` → 202 + `spaceship-async-operationid` header, polled via `GET /v1/async-operations/{id}`. heron polls until success/failed before returning to badger.
 - spaceship dev token was dead initially → mockingbird was built as a drop-in. Test buys against mockingbird; real-dev-API buys attempt real sandbox registrations.
 - Redis search cache served stale availability across registry-source switches → cache key later included the source, then became source-agnostic again once heron was the single entry point; buy clears the cache.
