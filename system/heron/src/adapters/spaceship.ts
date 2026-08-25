@@ -514,9 +514,12 @@ export function createRegistryClient(config: RegistryConfig) {
           };
         }
         if (op.status === "failed") {
+          // The registry has definitively rejected the registration (e.g.
+          // insufficient balance, contact rejected). Surface as 4xx so the
+          // purchase saga treats it as terminal and refunds the charge.
           throw new RegistryError(
             `registry registration failed for ${input.domainName}: ${JSON.stringify(op).slice(0, 300)}`,
-            502,
+            422,
             false,
           );
         }
