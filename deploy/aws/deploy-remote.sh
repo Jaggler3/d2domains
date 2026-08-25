@@ -20,6 +20,13 @@ if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" = "None" ]; then
   echo "no running d2domains instance found"; exit 1
 fi
 
+REGION="${AWS_REGION:-us-east-2}"
+PUBLIC_IP="$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" \
+  --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)"
+if [ -z "$PUBLIC_IP" ] || [ "$PUBLIC_IP" = "None" ]; then
+  echo "instance has no public IP"; exit 1
+fi
+PUBLIC_HOST="${PUBLIC_IP//./-}.sslip.io"
 SHA="$(git rev-parse --short HEAD)"
 PARAMETERS=$(printf '{
   "commands": [
@@ -30,9 +37,9 @@ PARAMETERS=$(printf '{
     "tar xzf /tmp/release.tar.gz -C /srv/d2domains",
     "rm -f /tmp/release.tar.gz",
     "chmod +x deploy/aws/on-server-deploy.sh",
-    "deploy/aws/on-server-deploy.sh"
+    "deploy/aws/on-server-deploy.sh %s %s"
   ]
-}' "$BUCKET")
+}' "$BUCKET" "$REGION" "$PUBLIC_HOST")
 
 COMMAND_ID="$(aws ssm send-command \
   --instance-ids "$INSTANCE_ID" \

@@ -6,7 +6,8 @@ set -euo pipefail
 
 cd /srv/d2domains
 
-REGION="$(curl -s -H "X-aws-ec2-metadata-token: $(curl -s -X PUT -H 'X-aws-ec2-metadata-token: required' http://169.254.169.254/latest/api/token)" http://169.254.169.254/latest/meta-data/placement/region)"
+REGION="${1:?usage: on-server-deploy.sh <region> <public-host>}"
+PUBLIC_HOST="${2:?usage: on-server-deploy.sh <region> <public-host>}"
 export AWS_DEFAULT_REGION="$REGION"
 
 echo "==> rebuilding .env from SSM"
@@ -48,20 +49,6 @@ HOG_URL=http://hog:8787
 STALWART_URL=http://stalwart:8080
 ENVEOF
 
-IMDS_TOKEN="$(curl -s -X PUT -H 'X-aws-ec2-metadata-token: required' \
-  http://169.254.169.254/latest/api/token)"
-PUBLIC_IP=""
-for i in 1 2 3 4 5; do
-  PUBLIC_IP="$(curl -s -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" \
-    http://169.254.169.254/latest/meta-data/public-ipv4)"
-  [ -n "$PUBLIC_IP" ] && break
-  sleep 2
-done
-if [ -z "$PUBLIC_IP" ]; then
-  echo "FATAL: could not determine public IP from instance metadata"
-  exit 1
-fi
-PUBLIC_HOST="${PUBLIC_IP//./-}.sslip.io"
 {
   echo "D2_PUBLIC_HOST=$PUBLIC_HOST"
   echo "CLIENT_ORIGIN=https://$PUBLIC_HOST"
