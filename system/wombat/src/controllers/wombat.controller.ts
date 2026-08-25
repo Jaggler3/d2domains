@@ -82,13 +82,22 @@ export const wombatController = {
       const paymentMethod = await stripe.paymentMethods.retrieve(parsed.data.token);
       const card = paymentMethod.card;
       if (!card) throw new HttpError("stripe payment method missing card", 422);
+      // Prefer the customer Stripe already attached during SetupIntent
+      // confirmation; otherwise attach to the user's (or a new) customer.
+      let customerId =
+        typeof paymentMethod.customer === "string" ? paymentMethod.customer : null;
+      if (!customerId) {
+        customerId = await getOrCreateStripeCustomer(methodInput.userId);
+        await stripe.paymentMethods.attach(paymentMethod.id, {
+          customer: customerId,
+        });
+      }
       methodInput = {
         ...parsed.data,
         brand: card.brand ?? parsed.data.brand,
         last4: card.last4 ?? parsed.data.last4,
         token: paymentMethod.id,
-        // confirmCardSetup attached this PM to the user's Stripe customer
-        stripeCustomerId: await getOrCreateStripeCustomer(methodInput.userId),
+        stripeCustomerId: customerId,
       };
     }
     const method = await billingRepo.addPaymentMethod(methodInput.userId, methodInput);
