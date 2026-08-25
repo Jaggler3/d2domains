@@ -19,6 +19,12 @@ for p in $(aws ssm get-parameters-by-path --path /d2domains/prod --recursive \
   printf '%s=%s\n' "$key" "$val" >> .env
 done
 
+# Sanity: without INTERNAL_TOKEN the whole stack crash-loops.
+if ! grep -q '^INTERNAL_TOKEN=.' .env; then
+  echo "FATAL: no parameters found under /d2domains/prod — check instance role policy"
+  exit 1
+fi
+
 cat >> .env <<'ENVEOF'
 DATABASE_URL=postgresql://postgres:postgres@postgres:5432/d2gres
 WEASEL_DATABASE_URL=postgresql://postgres:postgres@postgres:5432/d2weasel
@@ -44,8 +50,17 @@ ENVEOF
 
 IMDS_TOKEN="$(curl -s -X PUT -H 'X-aws-ec2-metadata-token: required' \
   http://169.254.169.254/latest/api/token)"
-PUBLIC_IP="$(curl -s -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" \
-  http://169.254.169.254/latest/meta-data/public-ipv4)"
+PUBLIC_IP=""
+for i in 1 2 3 4 5; do
+  PUBLIC_IP="$(curl -s -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" \
+    http://169.254.169.254/latest/meta-data/public-ipv4)"
+  [ -n "$PUBLIC_IP" ] && break
+  sleep 2
+done
+if [ -z "$PUBLIC_IP" ]; then
+  echo "FATAL: could not determine public IP from instance metadata"
+  exit 1
+fi
 PUBLIC_HOST="${PUBLIC_IP//./-}.sslip.io"
 {
   echo "D2_PUBLIC_HOST=$PUBLIC_HOST"
