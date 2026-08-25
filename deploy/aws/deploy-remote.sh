@@ -21,17 +21,25 @@ if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" = "None" ]; then
 fi
 
 SHA="$(git rev-parse --short HEAD)"
+PARAMETERS=$(printf '{
+  "commands": [
+    "set -euxo pipefail",
+    "mkdir -p /srv/d2domains",
+    "cd /srv/d2domains",
+    "aws s3 cp s3://%s/releases/latest.tar.gz /tmp/release.tar.gz",
+    "tar xzf /tmp/release.tar.gz -C /srv/d2domains",
+    "rm -f /tmp/release.tar.gz",
+    "chmod +x deploy/aws/on-server-deploy.sh",
+    "deploy/aws/on-server-deploy.sh"
+  ]
+}' "$BUCKET")
+
 COMMAND_ID="$(aws ssm send-command \
   --instance-ids "$INSTANCE_ID" \
   --document-name "AWS-RunShellScript" \
   --comment "d2domains deploy ${SHA}" \
   --timeout-seconds 1800 \
-  --parameters commands "[\"set -euxo pipefail\",
-    \"mkdir -p /srv/d2domains && cd /srv/d2domains\",
-    \"aws s3 cp s3://${BUCKET}/releases/latest.tar.gz /tmp/release.tar.gz\",
-    \"tar xzf /tmp/release.tar.gz -C /srv/d2domains && rm -f /tmp/release.tar.gz\",
-    \"chmod +x deploy/aws/on-server-deploy.sh\",
-    \"deploy/aws/on-server-deploy.sh\"]" \
+  --parameters "$PARAMETERS" \
   --query Command.CommandId --output text)"
 
 echo "==> command $COMMAND_ID; waiting for completion…"

@@ -73,6 +73,5 @@ echo " public ip:  $PUBLIC_IP"
 echo " web host:   ${PUBLIC_IP//./-}.sslip.io   (until d2domains.com lands)"
 echo "==============================================================="
 
-# First bootstrap: push artifact+secrets and install the stack.
-"$PWD/deploy/aws/push-artifact.sh"
+# First bootstrap: push artifact and install the stack.
 "$PWD/deploy/aws/deploy-remote.sh"
